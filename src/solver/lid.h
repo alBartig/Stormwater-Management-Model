@@ -53,7 +53,8 @@ enum LidTypes {
     POROUS_PAVEMENT,         // porous pavement
     RAIN_BARREL,             // rain barrel
     VEG_SWALE,               // vegetative swale
-    ROOF_DISCON};            // roof disconnection
+    ROOF_DISCON,             // roof disconnection
+    TREE_PIT};               // tree pit
 
 enum TimePeriod {
     PREVIOUS,                // previous time period

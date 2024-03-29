@@ -32,7 +32,7 @@
 //   Build 5.1.011:
 //   - Re-named STOR_INFIL to STOR_EXFIL and StorageInfil to StorageExfil to
 //     better reflect their meaning.
-//   - Evaporation rates from sub-surface layers reduced by fraction of 
+//   - Evaporation rates from sub-surface layers reduced by fraction of
 //     surface that is pervious (applies to block paver systems)
 //   - Flux rate routines for LIDs with underdrains modified to produce more
 //     physically meaningful results.
@@ -99,7 +99,7 @@ enum LidRptVars {
     MAX_RPT_VARS};
 
 //-----------------------------------------------------------------------------
-//  Imported variables 
+//  Imported variables
 //-----------------------------------------------------------------------------
 extern char HasWetLids;      // TRUE if any LIDs are wet (declared in runoff.c)
 
@@ -172,9 +172,9 @@ static void   updateWaterBalance(TLidUnit *lidUnit, double inflow,
 // OWA EDIT ##################################################################################
 // function to store additional data variables used to compute the water balance of LID Units.
 static void updateWaterRate(TLidUnit *lidUnit, double evap, double maxNativeInfil,
-                            double surfaceInflow, double surfInfil, double surfaceEvap, 
-                            double surfaceOutflow, double paveEvap, double pavePerc, 
-                            double soilEvap, double soilPerc, double storageInflow, 
+                            double surfaceInflow, double surfInfil, double surfaceEvap,
+                            double surfaceOutflow, double paveEvap, double pavePerc,
+                            double soilEvap, double soilPerc, double storageInflow,
                             double storageExfil, double storageEvap, double storageDrain);
 // ###########################################################################################
 
@@ -203,7 +203,7 @@ void lidproc_initWaterBalance(TLidUnit *lidUnit, double initVol)
 }
 
 // OWA EDIT ##################################################################################
-// initilize struct that stores additional data variables used to compute the water balance 
+// initilize struct that stores additional data variables used to compute the water balance
 // of LID Units. These variables are used in EPA SWMM, but are not stored for each LID Unit
 void lidproc_initWaterRate(TLidUnit* lidUnit)
 //
@@ -213,19 +213,19 @@ void lidproc_initWaterRate(TLidUnit* lidUnit)
 //  Output:  none
 //
 {
-    lidUnit->waterRate.evap = 0.0;              
+    lidUnit->waterRate.evap = 0.0;
     lidUnit->waterRate.maxNativeInfil = 0.0;
     lidUnit->waterRate.surfaceInflow = 0.0;
-    lidUnit->waterRate.surfaceInfil = 0.0;        
-    lidUnit->waterRate.surfaceEvap = 0.0;       
-    lidUnit->waterRate.surfaceOutflow = 0.0;    
-    lidUnit->waterRate.paveEvap = 0.0;          
-    lidUnit->waterRate.pavePerc = 0.0;          
-    lidUnit->waterRate.soilEvap = 0.0;          
-    lidUnit->waterRate.soilPerc = 0.0;          
-    lidUnit->waterRate.storageInflow = 0.0;     
-    lidUnit->waterRate.storageExfil = 0.0;      
-    lidUnit->waterRate.storageEvap = 0.0;       
+    lidUnit->waterRate.surfaceInfil = 0.0;
+    lidUnit->waterRate.surfaceEvap = 0.0;
+    lidUnit->waterRate.surfaceOutflow = 0.0;
+    lidUnit->waterRate.paveEvap = 0.0;
+    lidUnit->waterRate.pavePerc = 0.0;
+    lidUnit->waterRate.soilEvap = 0.0;
+    lidUnit->waterRate.soilPerc = 0.0;
+    lidUnit->waterRate.storageInflow = 0.0;
+    lidUnit->waterRate.storageExfil = 0.0;
+    lidUnit->waterRate.storageEvap = 0.0;
     lidUnit->waterRate.storageDrain = 0.0;
 }
 // ###########################################################################################
@@ -311,6 +311,13 @@ double lidproc_getOutflow(TLidUnit* lidUnit, TLidProc* lidProc, double inflow,
 
     //... find Green-Ampt infiltration from surface layer
     if ( theLidProc->lidType == POROUS_PAVEMENT ) SurfaceInfil = 0.0;
+    else if ( theLidProc->lidType == TREE_PIT )
+    {
+        SurfaceInfil =
+                grnampt_getInfil(&theLidUnit->soilInfil, Tstep,
+                                        SurfaceInflow, theLidUnit->paveDepth,
+                                        MOD_GREEN_AMPT);
+    }
     else if ( theLidUnit->soilInfil.Ks > 0.0 )
     {
         SurfaceInfil =
@@ -352,12 +359,24 @@ double lidproc_getOutflow(TLidUnit* lidUnit, TLidProc* lidProc, double inflow,
     case VEG_SWALE:       fluxRates = &swaleFluxRates;
                           omega = 0.5;
                           break;
+    case TREE_PIT:        fluxRates = &treepitFluxRates;   break;
     default:              return 0.0;
     }
 
     //... update moisture levels and flux rates over the time step
-    i = modpuls_solve(MAX_LAYERS, x, xOld, xPrev, xMin, xMax, xTol,
-                     fOld, f, tStep, omega, fluxRates);
+    // Condition to use a different solver for TREE_PIT
+    if (theLidProc->lidType == TREE_PIT)
+    {
+        // Assuming rungekutta45 is defined elsewhere and ready to be used
+        // This function should be designed to work with the specific requirements
+        // of the TREE_PIT calculations
+        i = fluxRates();
+    }
+    else
+    {
+        i = modpuls_solve(MAX_LAYERS, x, xOld, xPrev, xMin, xMax, xTol,
+                          fOld, f, tStep, omega, fluxRates);
+    }
 
 /** For debugging only ********************************************
     if  (i == 0)
@@ -414,17 +433,17 @@ void lidproc_saveResults(TLidUnit* lidUnit, double ucfRainfall, double ucfRainDe
     double elapsedHrs;                 // elapsed hours
 
     //... find total evap. rate and stored volume
-    totalEvap = SurfaceEvap + PaveEvap + SoilEvap + StorageEvap; 
+    totalEvap = SurfaceEvap + PaveEvap + SoilEvap + StorageEvap;
     totalVolume = SurfaceVolume + PaveVolume + SoilVolume + StorageVolume;
 
     //... update mass balance totals
     updateWaterBalance(theLidUnit, SurfaceInflow, totalEvap, StorageExfil,
                        SurfaceOutflow, StorageDrain, totalVolume);
-    
+
     // OWA EDIT ###############################################################
     //... update water rate structs
-    updateWaterRate(theLidUnit, EvapRate, MaxNativeInfil, SurfaceInflow, 
-                    SurfaceInfil, SurfaceEvap, SurfaceOutflow, PaveEvap, 
+    updateWaterRate(theLidUnit, EvapRate, MaxNativeInfil, SurfaceInflow,
+                    SurfaceInfil, SurfaceEvap, SurfaceOutflow, PaveEvap,
                     PavePerc, SoilEvap, SoilPerc, StorageInflow, StorageExfil,
                     StorageEvap, StorageDrain);
     // ########################################################################
@@ -505,7 +524,7 @@ void lidproc_saveResults(TLidUnit* lidUnit, double ucfRainfall, double ucfRainDe
                 theLidUnit->rptFile->results);
 
             //... re-set the number of successive dry periods to 0
-            theLidUnit->rptFile->wasDry = 0; 
+            theLidUnit->rptFile->wasDry = 0;
         }
     }
 }
@@ -611,7 +630,7 @@ void greenRoofFluxRates(double x[], double f[])
         maxRate = (storageThickness - storageDepth) * storageVoidFrac / Tstep +
                   StorageDrain + StorageEvap;
         SoilPerc = MIN(SoilPerc, maxRate);
-                
+
         //... adjust surface infil. so soil porosity not exceeded
         maxRate = (soilPorosity - soilTheta) * soilThickness / Tstep +
                   SoilPerc + SoilEvap;
@@ -749,7 +768,7 @@ void biocellFluxRates(double x[], double f[])
                 maxRate = MAX(maxRate, 0.0);
                 StorageDrain = MIN(StorageDrain, maxRate);
             }
-        
+
             //... limit soil perc by unused storage volume
             maxRate = StorageExfil + StorageDrain + StorageEvap +
                       (storageThickness - storageDepth) *
@@ -762,14 +781,14 @@ void biocellFluxRates(double x[], double f[])
             SurfaceInfil = MIN(SurfaceInfil, maxRate);
         }
     }
-    
+
     //... find surface layer outflow rate
     SurfaceOutflow = getSurfaceOutflowRate(surfaceDepth);
 
     //... compute overall layer flux rates
     f[SURF] = (SurfaceInflow - SurfaceEvap - SurfaceInfil - SurfaceOutflow) /
               theLidProc->surface.voidFrac;
-    f[SOIL] = (SurfaceInfil - SoilEvap - SoilPerc) / 
+    f[SOIL] = (SurfaceInfil - SoilEvap - SoilPerc) /
               theLidProc->soil.thickness;
     if ( storageThickness == 0.0 ) f[STOR] = 0.0;
     else f[STOR] = (SoilPerc - StorageEvap - StorageExfil - StorageDrain) /
@@ -1020,7 +1039,7 @@ void pavementFluxRates(double x[], double f[])
             StorageExfil = MIN(StorageExfil, SoilPerc);
             StorageDrain = SoilPerc - StorageExfil;
         }
-        PavePerc = MIN(PavePerc, SoilPerc);        
+        PavePerc = MIN(PavePerc, SoilPerc);
 
         //... limit surface infil. by available pavement volume
         availVolume = (paveThickness - paveDepth) * paveVoidFrac;
@@ -1035,9 +1054,9 @@ void pavementFluxRates(double x[], double f[])
     {
         PavePerc = MIN(PavePerc, SoilPerc);
         SoilPerc = PavePerc;
-        SurfaceInfil = MIN(SurfaceInfil,PavePerc); 
+        SurfaceInfil = MIN(SurfaceInfil,PavePerc);
         maxRate = MAX(StorageVolume / Tstep + SoilPerc - StorageEvap, 0.0);
-	    StorageExfil = MIN(StorageExfil, maxRate); 
+	    StorageExfil = MIN(StorageExfil, maxRate);
     }
 
     //... no adjoining layers are full
@@ -1054,7 +1073,7 @@ void pavementFluxRates(double x[], double f[])
         {
             maxRate = -StorageExfil - StorageEvap;
             if (storageDepth >= storageThickness ) maxRate += SoilPerc;
-            if ( theLidProc->drain.offset <= storageDepth ) 
+            if ( theLidProc->drain.offset <= storageDepth )
             {
                 maxRate += (storageDepth - theLidProc->drain.offset) *
                            storageVoidFrac/Tstep;
@@ -1269,6 +1288,158 @@ void barrelFluxRates(double x[], double f[])
 
 //=============================================================================
 
+void  getTreepitDxDt(double t, double* x, double* dxdt)
+//
+//  Input:   t    = current time (not used)
+//           x    = array of state variables
+//  Output:  dxdt = array of time derivatives of state variables
+//  Purpose: computes time derivatives of upper moisture content
+//           and lower depth.
+//
+//
+//  Purpose: computes flux rates from the layers of a bio-retention cell LID.
+//  Input:   x = vector of storage levels
+//  Output:  f = vector of flux rates
+//
+{
+    double qUpper;    // inflow - outflow for upper zone (ft/sec)
+    double qLower;    // inflow - outflow for lower zone (ft/sec)
+    double denom;
+
+    // Moisture level variables
+    double surfaceDepth;
+    double soilTheta;
+    double storageDepth;
+
+    // Intermediate variables
+    double availVolume;
+    double maxRate;
+    double pipeExfil;
+
+    // LID layer properties
+    double soilThickness    = theLidProc->soil.thickness;
+    double soilPorosity     = theLidProc->soil.porosity;
+    double soilFieldCap     = theLidProc->soil.fieldCap;
+    double soilWiltPoint    = theLidProc->soil.wiltPoint;
+    double storageThickness = theLidProc->storage.thickness;
+    double storageVoidFrac  = theLidProc->storage.voidFrac;
+    double satConduct       = theLidProc->soil.kSat;
+    double surfaceArea      = Subcatch[j].area;
+
+    //... retrieve moisture levels from input vector
+    surfaceDepth = x[SURF];
+    soilTheta    = x[SOIL];
+    storageDepth = x[STOR];
+
+    //... calculate distribution pipe exfiltration rate
+    pipeExfil = getPipeExfil();
+    pipeExfil = MIN(pipeExfil, MaxPipeExfil);
+    //... convert exfiltration flow rate to m/s
+    pipeExfil = pipeExfil / surfaceArea;
+
+    //... unsaturated zone perc rate
+    SoilPerc = getSoilPercRate(soilTheta);
+    SoilPerc = MIN(SoilPerc, MaxSoilPerc);
+
+    //... exfiltration rate out of saturated zone
+    StorageExfil = getStorageExfilRate();
+    StorageExfil = MIN(StorageExfil, satConduct);
+    MaxExfil += SoilPerc;
+    StorageExfil = MIN(StorageExfil, MaxExfil);
+    StorageExfil = MAX(StorageExfil, 0.0);
+
+    //... underdrain flow rate
+    StorageDrain = 0.0;
+    if ( theLidProc->drain.coeff > 0.0 )
+    {
+        StorageDrain = getStorageDrainRate(storageDepth, soilTheta, 0.0,
+                                           surfaceDepth);
+    }
+    maxDrain = maxDrain + SoilPerc - StorageExfil;
+    StorageDrain = MIN(StorageDrain, maxDrain);
+    StorageDrain = MAX(StorageDrain, 0.0);
+
+    //... limit infiltration by available volume and outflow
+    maxInfil += MIN(SoilPerc, (StorageDrain + StorageExfil));
+    SurfaceInfil = MIN(SurfaceInfil, maxInfil);
+
+    //... calculate net fluxes
+    qUpper = SurfaceInfil - SoilEvap - SoilPerc;
+    qLower = SoilPerc - StorageExfil - StorageDrain;
+
+    // --- d(upper zone moisture)/dt = (net upper zone flow) /
+    //                                 (upper zone depth)
+    denom = soilThickness - storageDepth;
+    if (denom > 0.0)
+        dxdt[THETA] = qUpper / denom;
+    else
+        dxdt[THETA] = 0.0;
+
+    // --- d(lower zone depth)/dt = (net lower zone flow) /
+    //                              (upper zone moisture deficit)
+    denom = soilPorosity - soilTheta;
+    if (denom > 0.0)
+        dxdt[LOWERDEPTH] = qLower / denom;
+    else
+        dxdt[LOWERDEPTH] = 0.0;
+}
+
+//=============================================================================
+
+void treepitFluxRates(double x[], double f[])
+//
+//  Purpose: computes flux rates for a rain barrel LID.
+//  Input:   x = vector of storage levels
+//  Output:  f = vector of flux rates
+//
+{
+    // Moisture level variables
+    double surfaceDepth;
+    double soilTheta;
+    double storageDepth;
+
+    // Intermediate variables
+    double availVolume;
+    double maxRate;
+    double head;
+    double maxValue;
+    double vUnsat;
+
+    // LID layer properties
+    double soilThickness    = theLidProc->soil.thickness;
+    double soilPorosity     = theLidProc->soil.porosity;
+    double soilFieldCap     = theLidProc->soil.fieldCap;
+    double soilWiltPoint    = theLidProc->soil.wiltPoint;
+    double storageThickness = theLidProc->storage.thickness;
+    double storageVoidFrac  = theLidProc->storage.voidFrac;
+    double drainageOffset   = theLidProc->drain.offset;
+
+    //... retrieve moisture levels from input vector
+    surfaceDepth = x[SURF];
+    soilTheta    = x[SOIL];
+    storageDepth = x[STOR];
+
+    // --- set limit on percolation rate from upper to lower GW zone
+    vUnsat = (soilThickness - storageDepth) * (soilTheta - soilFieldCap);
+    vUnsat = MAX(0.0, vUnsat);
+    MaxSoilPerc = vUnsat / Tstep;
+
+    // --- set limit on GW flow out of aquifer based on volume of lower zone
+    MaxStorageExfil = storageDepth*soilPorosity / Tstep;
+    MaxStorageDrain = (storageDepth-drainageOffset)*soilPorosity / Tstep;
+
+    // --- integrate eqns. for d(Theta)/dt and d(LowerDepth)/dt
+    //     NOTE: ODE solver must have been initialized previously
+    odesolve_integrate(x, 2, 0, Tstep, GWTOL, Tstep, getTreepitDxDt);
+
+    //... assign values to layer flux rates
+    f[SURF] = SurfaceInflow - StorageInflow;
+    f[STOR] = StorageInflow - StorageDrain;
+    f[SOIL] = 0.0;
+}
+
+//=============================================================================
+
 double getSurfaceOutflowRate(double depth)
 //
 //  Purpose: computes outflow rate from a LID's surface layer.
@@ -1306,7 +1477,7 @@ double getPavementPermRate()
     double clogFactor= theLidProc->pavement.clogFactor;
     double regenDays = theLidProc->pavement.regenDays;
 
-    // ... find permeability reduction due to clogging     
+    // ... find permeability reduction due to clogging
     if ( clogFactor > 0.0 )
     {
         // ... see if permeability regeneration has occurred
@@ -1317,7 +1488,7 @@ double getPavementPermRate()
             if ( OldRunoffTime / 1000.0 / SECperDAY >= theLidUnit->nextRegenDay )
             {
                 // ... reduce total volume treated by degree of regeneration
-                theLidUnit->volTreated *= 
+                theLidUnit->volTreated *=
                     (1.0 - theLidProc->pavement.regenDegree);
 
                 // ... update next day that regenration occurs
@@ -1387,7 +1558,7 @@ double getStorageExfilRate()
 
 //=============================================================================
 
-double  getStorageDrainRate(double storageDepth, double soilTheta, 
+double  getStorageDrainRate(double storageDepth, double soilTheta,
                             double paveDepth, double surfaceDepth)
 //
 //  Purpose: computes underdrain flow rate in a LID's storage layer.
@@ -1431,7 +1602,7 @@ double  getStorageDrainRate(double storageDepth, double soilTheta,
                     {
                         head += paveDepth;
                         if ( paveDepth >= paveThickness ) head += surfaceDepth;
-                    }    
+                    }
                     else head += surfaceDepth;
                 }
             }
@@ -1594,12 +1765,12 @@ void updateWaterRate(TLidUnit *lidUnit, double evap, double maxNativeInfil,
     //           over the current time step
     //  Input:   lidUnit   = a particular LID unit
     //           evap              = evaporation rate (ft/s)
-    //           maxNativeInfil    = native soil infil. rate limit (ft/s)   
+    //           maxNativeInfil    = native soil infil. rate limit (ft/s)
     //           surfaceInflow     = precip. + runon to LID unit (ft/s)
     //           surfaceInfil      = infil. rate from surface layer (ft/s)
     //           surfaceEvap       = evap. rate from surface layer (ft/s
     //           surfaceOutflow    = outflow from surface layer (ft/s)
-    //           paveEvap          = evap. from pavement layer (ft/s)      
+    //           paveEvap          = evap. from pavement layer (ft/s)
     //           pavePerc          = percolation from pavement layer (ft/s)
     //           soilEvap          = evap. from soil layer (ft/s)
     //           soilPerc          = percolation from soil layer (ft/s)
