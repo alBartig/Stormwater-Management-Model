@@ -98,14 +98,15 @@ enum LidLayerTypes {
     PAVE,                    // pavement layer
     DRAINMAT,                // drainage mat layer
     DRAIN,                   // underdrain system
-    REMOVALS};               // pollutant removals
+    REMOVALS,                // pollutant removals
+    DISTPIPE};               // distribution pipe layer
 
 //// Note: DRAINMAT must be placed before DRAIN so the two keywords can
 ///        be distinguished from one another when parsing a line of input. 
 
 char* LidLayerWords[] =
     {"SURFACE", "SOIL", "STORAGE", "PAVEMENT", "DRAINMAT", "DRAIN",
-     "REMOVALS", NULL};
+     "REMOVALS", "DISTPIPE", NULL};
 
 char* LidTypeWords[] =
     {"BC",                   //bio-retention cell
@@ -116,6 +117,7 @@ char* LidTypeWords[] =
      "RB",                   //rain barrel
      "VS",                   //vegetative swale
      "RD",                   //rooftop disconnection
+     "TP",                   //treepit
      NULL};
 
 //-----------------------------------------------------------------------------
@@ -202,6 +204,7 @@ static int    readStorageData(int j, char* tok[], int ntoks);
 static int    readDrainData(int j, char* tok[], int ntoks);
 static int    readDrainMatData(int j, char* toks[], int ntoks);
 static int    readRemovalsData(int j, char* toks[], int ntoks);
+static int    readDistPipeData(int j, char* toks[], int ntoks);
 
 static int    addLidUnit(int j, int k, int n, double x[], char* fname,
               int drainSubcatch, int drainNode);
@@ -397,6 +400,7 @@ int lid_readProcParams(char* toks[], int ntoks)
     case DRAIN: return readDrainData(j, toks, ntoks);
     case DRAINMAT: return readDrainMatData(j, toks, ntoks);
     case REMOVALS: return readRemovalsData(j, toks, ntoks);
+    case DISTPIPE: return readDistPipeData(j, toks, ntoks);
     }
     return error_setInpError(ERR_KEYWORD, toks[1]);
 }
@@ -599,6 +603,53 @@ int readSurfaceData(int j, char* toks[], int ntoks)
     LidProcs[j].surface.roughness     = x[2];
     LidProcs[j].surface.surfSlope     = x[3] / 100.0;
     LidProcs[j].surface.sideSlope     = x[4];
+    return 0;
+}
+
+//=============================================================================
+
+int readDistPipeData(int j, char* toks[], int ntoks)
+//
+//  Purpose: reads distribution pipe layer data for a LID process from line of input
+//           data file
+//  Input:   j = LID process index
+//           toks = array of string tokens
+//           ntoks = number of tokens
+//  Output:  returns error code
+//
+//  Format of data is:
+//  LID_ID  SURFACE  PipeDiameter  PipeLength  coeff  expon  offset  qCurve
+//
+{
+    int    i;
+    double x[5];
+
+    if ( ntoks < 6 ) return error_setInpError(ERR_ITEMS, "");
+    for (i = 2; i < 5; i++)
+    {
+        if ( ! getDouble(toks[i], &x[i-2]) || x[i-2] < 0.0 )
+            return error_setInpError(ERR_NUMBER, toks[i]);
+    }
+    if ( x[0] == 0.0 ) x[1] = 0.0;
+
+    i = -1;
+    if ( ntoks >= 9 )
+    {
+        i = project_findObject(CURVE, toks[8]);
+        if (i < 0) return error_setInpError(ERR_NAME, toks[8]);
+    }
+
+    LidProcs[j].distPipe.diameter      = x[0] / UCF(RAINDEPTH);
+    LidProcs[j].distPipe.length        = x[1];
+    LidProcs[j].distPipe.coeff         = x[2];
+    LidProcs[j].distPipe.expon         = x[3];
+    LidProcs[j].distPipe.offset        = x[4] / UCF(RAINDEPTH);
+    LidProcs[j].distPipe.qCurve        = i;
+    LidProcs[j].distPipe.type          = CIRCULAR;
+    LidProcs[j].distPipe.yFull         = x[0] / UCF(RAINDEPTH);
+    LidProcs[j].distPipe.aFull         = M_PI * pow(x[0] / UCF(RAINDEPTH), 2) / 4;
+    LidProcs[j].distPipe.vFull         = x[1] * M_PI * pow(x[0] / UCF(RAINDEPTH), 2) / 4;
+
     return 0;
 }
 

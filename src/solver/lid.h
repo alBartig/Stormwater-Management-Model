@@ -41,6 +41,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "infil.h"
+#include "objects.h"
 
 //-----------------------------------------------------------------------------
 //  Enumerations
@@ -54,7 +55,7 @@ enum LidTypes {
     RAIN_BARREL,             // rain barrel
     VEG_SWALE,               // vegetative swale
     ROOF_DISCON,             // roof disconnection
-    TREE_PIT};               // tree pit
+    TREEPIT};                // tree pit
 
 enum TimePeriod {
     PREVIOUS,                // previous time period
@@ -63,7 +64,7 @@ enum TimePeriod {
 //-----------------------------------------------------------------------------
 //  Data Structures
 //-----------------------------------------------------------------------------
-#define MAX_LAYERS 4
+#define MAX_LAYERS 5
 
 // LID Surface Layer
 typedef struct
@@ -132,6 +133,23 @@ typedef struct
     double    alpha;              // slope/roughness term in Manning equation
 }  TDrainMatLayer;
 
+// Distribution Pipe Layer (for treepits)
+typedef struct
+{
+    double    diameter;           // diameter of dist. pipe
+    double    length;             // length of dist. pipe
+    double    coeff;              // dist pipe flow coeff. (in/hr or mm/hr)
+    double    expon;              // dist pipe head exponent (for in or mm)
+    double    offset;             // offset height of dist. pipe (ft)
+    double    clogFactor;         // clogging factor
+    int       qCurve;             // curve controlling flow rate (optional)
+    int       type;               // 24, number indicating crossectional shape
+    TXsect    xsect;              // crosssection object of distpipe
+    double    yFull;              // water depth of filled pipe
+    double    aFull;              // area of filled pipe
+    double    vFull;              // volume of filled pipe
+}  TDistPipeLayer;
+
 // LID Process - generic LID design per unit of area
 typedef struct
 {
@@ -143,6 +161,7 @@ typedef struct
     TStorageLayer  storage;       // storage layer parameters
     TDrainLayer    drain;         // underdrain system parameters
     TDrainMatLayer drainMat;      // drainage mat layer
+    TDistPipeLayer distPipe;      // dist. pipe layer
     double*        drainRmvl;     // underdrain pollutant removals
 }  TLidProc;
 
@@ -210,6 +229,7 @@ typedef struct
     double   paveDepth;      // depth of water in porous pavement layer
     double   soilMoisture;   // moisture content of biocell soil layer
     double   storageDepth;   // depth of water in storage layer (ft)
+    double   distpipeVol;    // volume stored in distribution pipe
 
     // net inflow - outflow from previous time step for each LID layer (ft/s)
     double   oldFluxRates[MAX_LAYERS];
