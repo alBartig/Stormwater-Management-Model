@@ -150,6 +150,16 @@ typedef struct
     double    vFull;              // volume of filled pipe
 }  TDistPipeLayer;
 
+// Tree Layer (for treepits)
+typedef struct
+{
+    double      h2;                 // h2 for water stress response
+    double      h3;                 // h3 for water stress response
+    double      LAI;                // Leaf Area Index
+    double      crownArea;          // projected crown area
+    int         LAICurve;           // curve controlling LAI (optional)
+}  TTreeLayer;
+
 // LID Process - generic LID design per unit of area
 typedef struct
 {
@@ -162,6 +172,7 @@ typedef struct
     TDrainLayer    drain;         // underdrain system parameters
     TDrainMatLayer drainMat;      // drainage mat layer
     TDistPipeLayer distPipe;      // dist. pipe layer
+    TTreeLayer     tree;          // tree layer
     double*        drainRmvl;     // underdrain pollutant removals
 }  TLidProc;
 
@@ -228,6 +239,7 @@ typedef struct
     double   surfaceDepth;   // depth of ponded water on surface layer (ft)
     double   paveDepth;      // depth of water in porous pavement layer
     double   soilMoisture;   // moisture content of biocell soil layer
+    double   soilMoisture2;   // moisture content of rooted zone in soil layer
     double   storageDepth;   // depth of water in storage layer (ft)
     double   distpipeVol;    // volume stored in distribution pipe
 
@@ -312,6 +324,6 @@ double   lidproc_getOutflow(TLidUnit* lidUnit, TLidProc* lidProc,
          double tStep, double* lidEvap, double* lidInfil, double* lidDrain);
 
 void     lidproc_saveResults(TLidUnit* lidUnit, double ucfRainfall,
-         double ucfRainDepth);
+         double ucfRainDepth, double ucfVolume);
 
 #endif

@@ -67,6 +67,7 @@
 #include "lid.h"
 #include "headers.h"
 #include "odesolve.h"
+#include "table.c"
 
 //-----------------------------------------------------------------------------
 //  Constants
@@ -83,8 +84,8 @@ enum LidLayerTypes {
     SOIL,                    // soil layer
     STOR,                    // storage layer
     PAVE,                    // pavement layer
-    DRAIN,                   // underdrain system
-    DISTPIPE};               // distribution pipe layer
+    DISTPIPE,                // distribution pipe layer
+    DRAIN};                  // underdrain system
 
 enum LidRptVars {
     SURF_INFLOW,             // inflow to surface layer
@@ -99,6 +100,8 @@ enum LidRptVars {
     PAVE_DEPTH,              // water level in pavement layer
     SOIL_MOIST,              // moisture content of soil layer
     STOR_DEPTH,              // water level in storage layer
+    DISTPIPE_VOL,            // stored volume in distribution pipe layer
+    SOIL_MOIST2,             // moisture content of rooted soil layer
     MAX_RPT_VARS};
 
 //-----------------------------------------------------------------------------
@@ -439,7 +442,7 @@ double lidproc_getOutflow(TLidUnit* lidUnit, TLidProc* lidProc, double inflow,
 
 //=============================================================================
 
-void lidproc_saveResults(TLidUnit* lidUnit, double ucfRainfall, double ucfRainDepth)
+void lidproc_saveResults(TLidUnit* lidUnit, double ucfRainfall, double ucfRainDepth, double ucfVolume)
 //
 //  Purpose: updates the mass balance for an LID unit and saves
 //           current flux rates to the LID report file.
@@ -504,6 +507,11 @@ void lidproc_saveResults(TLidUnit* lidUnit, double ucfRainfall, double ucfRainDe
         rptVars[PAVE_DEPTH] = theLidUnit->paveDepth*ucf;
         rptVars[SOIL_MOIST] = theLidUnit->soilMoisture;
         rptVars[STOR_DEPTH] = theLidUnit->storageDepth*ucf;
+        rptVars[SOIL_MOIST2] = theLidUnit->soilMoisture2;
+
+        //... convert storage results to original units (cft or m3)
+        ucf = ucfVolume;
+        rptVars[DISTPIPE_VOL] = theLidUnit->distpipeVol*ucf;
 
         //... if the current LID state is wet but the previous state was dry
         //    for more than one period then write the saved previous results
@@ -524,7 +532,8 @@ void lidproc_saveResults(TLidUnit* lidUnit, double ucfRainfall, double ucfRainDe
              "%8.3f\t %8.3f\t %8.3f\t %8.3f\t %8.3f\t %8.3f",
              timeStamp, elapsedHrs, rptVars[0], rptVars[1], rptVars[2],
              rptVars[3], rptVars[4], rptVars[5], rptVars[6], rptVars[7],
-             rptVars[8], rptVars[9], rptVars[10], rptVars[11]);
+             rptVars[8], rptVars[9], rptVars[10], rptVars[11], rptVars[12],
+             rptVars[13]);
 
         //... if the current LID state is dry
         if ( isDry )
@@ -1388,12 +1397,8 @@ void  getTreepitDxDt(double t, double* x, double* dxdt)
     double soilTheta;
     double storageDepth;
 
-    // Intermediate variables
-    double availVolume;
-    double maxRate;
-    double pipeExfil;
-
     // LID layer properties
+    double distpipePorosity = theLidProc->pavement.voidFrac;
     double soilThickness    = theLidProc->soil.thickness;
     double soilPorosity     = theLidProc->soil.porosity;
     double soilFieldCap     = theLidProc->soil.fieldCap;
@@ -1412,6 +1417,9 @@ void  getTreepitDxDt(double t, double* x, double* dxdt)
     //... calculate net fluxes
     qUpper = SurfaceInfil - SoilEvap - SoilPerc;
     qLower = SoilPerc - StorageExfil - StorageDrain;
+
+    dxdt[DISTPIPE] = ( SurfaceInflow - PipeExfil ) * surfaceArea;
+    dxdt[PAVE] = (PipeExfil - SurfaceInfil) / distpipePorosity;
 
     // --- d(upper zone moisture)/dt = (net upper zone flow) /
     //                                 (upper zone depth)
@@ -1446,10 +1454,6 @@ void treepitFluxRates(double x[], double f[])
     double storageDepth;
 
     // Intermediate variables
-    double availVolume;
-    double maxRate;
-    double head;
-    double maxValue;
     double vUnsat;
 
     // LID layer properties
@@ -1479,10 +1483,10 @@ void treepitFluxRates(double x[], double f[])
     odesolve_integrate(x, 2, 0, Tstep, GWTOL, Tstep, getTreepitDxDt);
 
     //... assign values to layer flux rates
-    f[DISTPIPE] = SurfaceInflow - StorageInflow;
-    f[PAVE]     =
-    f[STOR]     = StorageInflow - StorageDrain;
-    f[SOIL]     = 0.0;
+    f[DISTPIPE] = SurfaceInflow - PipeExfil;
+    f[PAVE]     = PipeExfil - SurfaceInfil;
+    f[STOR]     = SoilPerc - StorageDrain - StorageExfil;
+    f[SOIL]     = SurfaceInfil - SoilPerc;
 }
 
 //=============================================================================
@@ -1865,6 +1869,29 @@ void getEvapRates(double surfaceVol, double paveVol, double soilVol,
         StorageEvap = MIN(availEvap, storageVol / Tstep);
     }
 }
+
+//=============================================================================
+
+double getWaterStressResponse(double theta)
+{
+    double h1 = theLidProc->soil.porosity;
+    double h2 = theLidProc->tree.h2;
+    double h3 = theLidProc->tree.h3;
+    double h4 = theLidProc->soil.wiltPoint;
+
+    if (theta <= h4) {
+        return 0.0;
+    } else if (theta >= h1) {
+        return 0.0;
+    } else if (theta < h1 && theta > h2) {
+        return table_interpolate(theta, h2, h1, 1.0, 0.0);
+    } else if (theta <= h2 && theta >= h3) {
+        return 1.0;
+    } else if (theta < h3 && theta > h4) {
+        return table_interpolate(theta, h4, h3, 0.0, 1.0);
+    }
+}
+
 
 //=============================================================================
 
