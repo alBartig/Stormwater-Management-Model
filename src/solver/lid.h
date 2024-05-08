@@ -157,6 +157,7 @@ typedef struct
     double      h3;                 // h3 for water stress response
     double      LAI;                // Leaf Area Index
     double      crownArea;          // projected crown area
+    double      fracRooted;         // fraction of the soil volume containing roots
     int         LAICurve;           // curve controlling LAI (optional)
 }  TTreeLayer;
 

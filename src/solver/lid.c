@@ -83,6 +83,7 @@
 #define ERR_PAVE_LAYER " - check pavement layer parameters"
 #define ERR_SOIL_LAYER " - check soil layer parameters"
 #define ERR_STOR_LAYER " - check storage layer parameters"
+#define ERR_TREE_LAYER " - check tree layer parameters"
 #define ERR_SWALE_SURF " - check swale surface parameters"
 #define ERR_GREEN_AMPT " - check subcatchment Green-Ampt parameters"
 #define ERR_DRAIN_OFFSET " - drain offset exceeds storage height"
@@ -108,7 +109,7 @@ enum LidLayerTypes {
 
 char* LidLayerWords[] =
     {"SURFACE", "SOIL", "STORAGE", "PAVEMENT", "DRAINMAT", "DRAIN",
-     "REMOVALS", "DISTPIPE", NULL};
+     "REMOVALS", "DISTPIPE", "TREE", NULL};
 
 char* LidTypeWords[] =
     {"BC",                   //bio-retention cell
@@ -694,7 +695,8 @@ int readTreeLayerData(int j, char* toks[], int ntoks)
     LidProcs[j].tree.h3            = x[1];
     LidProcs[j].tree.LAI           = x[2];
     LidProcs[j].tree.crownArea     = x[3] / UCF(LANDAREA);
-    LidProcs[j].tree.LAICurve      = x[4];
+    LidProcs[j].tree.fracRooted    = x[4];
+    LidProcs[j].tree.LAICurve      = i;
 
     return 0;
 }
@@ -1116,6 +1118,16 @@ void validateLidProc(int j)
             sstrcat(Msg, ERR_SOIL_LAYER, MAXMSG);
             report_writeErrorMsg(ERR_LID_PARAMS, Msg);
         }
+    }
+
+    //... check tree layer parameters
+    if ( LidProcs[j].tree.h2 >= LidProcs[j].soil.porosity
+         || LidProcs[j].tree.h3 >= LidProcs[j].tree.h2
+         || LidProcs[j].soil.wiltPoint >= LidProcs[j].tree.h3 )
+    {
+        sstrncpy(Msg, LidProcs[j].ID, MAXMSG);
+        sstrcat(Msg, ERR_TREE_LAYER, MAXMSG);
+        report_writeErrorMsg(ERR_LID_PARAMS, Msg);
     }
 
     //... check storage layer parameters

@@ -504,6 +504,8 @@ int     controls_evaluate(DateTime currentTime, DateTime elapsedTime,
 //-----------------------------------------------------------------------------
 //   Table & Time Series Methods
 //-----------------------------------------------------------------------------
+double table_interpolate(double x, double x1, double y1, double x2, double y2);
+
 int     table_readCurve(char* tok[], int ntoks);
 int     table_readTimeseries(char* tok[], int ntoks);
 

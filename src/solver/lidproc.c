@@ -67,7 +67,7 @@
 #include "lid.h"
 #include "headers.h"
 #include "odesolve.h"
-#include "table.c"
+#include "funcs.h"
 
 //-----------------------------------------------------------------------------
 //  Constants
@@ -182,6 +182,7 @@ static double getTreepitDrainRate(double storageDepth, double soilTheta,
 static double getDrainMatOutflow(double depth);
 static void   getEvapRates(double surfaceVol, double paveVol,
               double soilVol, double storageVol, double pervFrac);
+static double getWaterStressResponse(double theta);
 static void   getTreepitFluxes(double surfaceDepth, double soilTheta,
                                double storageDepth, double distzoneDepth);
 
@@ -529,7 +530,7 @@ void lidproc_saveResults(TLidUnit* lidUnit, double ucfRainfall, double ucfRainDe
             M_D_Y, getDateTime(NewRunoffTime), TIME_STAMP_SIZE, timeStamp);
         snprintf(theLidUnit->rptFile->results, sizeof(theLidUnit->rptFile->results),
              "\n%20s\t %8.3f\t %8.3f\t %8.4f\t %8.3f\t %8.3f\t %8.3f\t %8.3f\t"
-             "%8.3f\t %8.3f\t %8.3f\t %8.3f\t %8.3f\t %8.3f",
+             "%8.3f\t %8.3f\t %8.3f\t %8.3f\t %8.3f\t %8.3f %8.3f\t %8.3f",
              timeStamp, elapsedHrs, rptVars[0], rptVars[1], rptVars[2],
              rptVars[3], rptVars[4], rptVars[5], rptVars[6], rptVars[7],
              rptVars[8], rptVars[9], rptVars[10], rptVars[11], rptVars[12],
@@ -1455,6 +1456,9 @@ void treepitFluxRates(double x[], double f[])
 
     // Intermediate variables
     double vUnsat;
+    double transpRate;
+    DateTime currentDate;
+    int month;
 
     // LID layer properties
     double soilThickness    = theLidProc->soil.thickness;
@@ -1462,6 +1466,11 @@ void treepitFluxRates(double x[], double f[])
     double soilFieldCap     = theLidProc->soil.fieldCap;
     double soilWiltPoint    = theLidProc->soil.wiltPoint;
     double drainageOffset   = theLidProc->drain.offset;
+    int curve               = theLidProc->tree.LAICurve;
+    double lai              = theLidProc->tree.LAI;
+    double crownArea        = theLidProc->tree.crownArea;
+    double fracRooted       = theLidProc->tree.fracRooted;
+
 
     //... retrieve moisture levels from input vector
     distpipeVol   = x[DISTPIPE];
@@ -1469,10 +1478,22 @@ void treepitFluxRates(double x[], double f[])
     soilTheta     = x[SOIL];
     storageDepth  = x[STOR];
 
+    // --- calculate potential maximum transpiration
+    // --- apply user-supplied LAI pattern
+    if (curve >= 0){
+        currentDate = getDateTime(NewRoutingTime);
+        month = datetime_monthOfYear(currentDate) - 1;
+        lai *= table_lookup(&Curve[curve], month);
+    }
+    transpRate = EvapRate * lai * crownArea / theLidUnit->area;
+    transpRate = transpRate * getWaterStressResponse(soilTheta);
+    // --- set limit on transpiration rate from upper GW zone
+    SoilEvap = MIN((soilTheta - soilWiltPoint) * fracRooted * (soilThickness - storageDepth) / Tstep, transpRate);
+
     // --- set limit on percolation rate from upper to lower GW zone
     vUnsat = (soilThickness - storageDepth) * (soilTheta - soilFieldCap);
     vUnsat = MAX(0.0, vUnsat);
-    MaxSoilPerc = vUnsat / Tstep;
+    MaxSoilPerc = vUnsat / Tstep - SoilEvap;
 
     // --- set limit on GW flow out of aquifer based on volume of lower zone
     MaxStorageExfil = storageDepth*soilPorosity / Tstep;
@@ -1485,8 +1506,8 @@ void treepitFluxRates(double x[], double f[])
     //... assign values to layer flux rates
     f[DISTPIPE] = SurfaceInflow - PipeExfil;
     f[PAVE]     = PipeExfil - SurfaceInfil;
+    f[SOIL]     = SurfaceInfil - SoilPerc - SoilEvap;
     f[STOR]     = SoilPerc - StorageDrain - StorageExfil;
-    f[SOIL]     = SurfaceInfil - SoilPerc;
 }
 
 //=============================================================================
@@ -1881,17 +1902,14 @@ double getWaterStressResponse(double theta)
 
     if (theta <= h4) {
         return 0.0;
-    } else if (theta >= h1) {
-        return 0.0;
     } else if (theta < h1 && theta > h2) {
         return table_interpolate(theta, h2, h1, 1.0, 0.0);
     } else if (theta <= h2 && theta >= h3) {
         return 1.0;
     } else if (theta < h3 && theta > h4) {
         return table_interpolate(theta, h4, h3, 0.0, 1.0);
-    }
+    } else return 0.0; // (theta >= h1)
 }
-
 
 //=============================================================================
 
