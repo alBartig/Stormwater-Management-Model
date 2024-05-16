@@ -74,7 +74,7 @@
 //-----------------------------------------------------------------------------
 #define STOPTOL  0.00328     // integration error tolerance in ft (= 1 mm)
 #define MINFLOW  2.3e-8      // flow cutoff for dry conditions (= 0.001 in/hr)
-static const double GWTOL = 0.0001;    // ODE solver tolerance
+static const double TREEPITTOL = 0.0001;    // ODE solver tolerance
 
 //-----------------------------------------------------------------------------
 //  Enumerations
@@ -85,6 +85,7 @@ enum LidLayerTypes {
     STOR,                    // storage layer
     PAVE,                    // pavement layer
     DISTPIPE,                // distribution pipe layer
+    ROOT,                    // rooted soil layer
     DRAIN};                  // underdrain system
 
 enum LidRptVars {
@@ -102,6 +103,7 @@ enum LidRptVars {
     STOR_DEPTH,              // water level in storage layer
     DISTPIPE_VOL,            // stored volume in distribution pipe layer
     SOIL_MOIST2,             // moisture content of rooted soil layer
+    DISTPIPE_EXFIL,          // exfiltration from distribution pipe
     MAX_RPT_VARS};
 
 //-----------------------------------------------------------------------------
@@ -305,6 +307,7 @@ double lidproc_getOutflow(TLidUnit* lidUnit, TLidProc* lidProc, double inflow,
     x[STOR] = theLidUnit->storageDepth;
     x[PAVE] = theLidUnit->paveDepth;
     x[DISTPIPE] = theLidUnit->distpipeVol;
+    x[ROOT] = theLidUnit->soilMoisture2;
 
     //... initialize layer moisture volumes, flux rates and moisture limits
     SurfaceVolume  = 0.0;
@@ -339,7 +342,7 @@ double lidproc_getOutflow(TLidUnit* lidUnit, TLidProc* lidProc, double inflow,
         // calculate infiltration into soil layer from pavement layer
         SurfaceInfil =
                 grnampt_getInfil(&theLidUnit->soilInfil, Tstep,
-                                        SurfaceInflow, theLidUnit->paveDepth,
+                                        PipeExfil, theLidUnit->paveDepth,
                                         MOD_GREEN_AMPT);
     }
     else if ( theLidUnit->soilInfil.Ks > 0.0 )
@@ -369,21 +372,10 @@ double lidproc_getOutflow(TLidUnit* lidUnit, TLidProc* lidProc, double inflow,
     {
         xMax[STOR] = theLidProc->drainMat.thickness;
     }
-
-    //... determine which flux rate function to use
-    switch (theLidProc->lidType)
+    if ( theLidProc->lidType == TREEPIT )
     {
-    case BIO_CELL:
-    case RAIN_GARDEN:     fluxRates = &biocellFluxRates;   break;
-    case GREEN_ROOF:      fluxRates = &greenRoofFluxRates; break;
-    case INFIL_TRENCH:    fluxRates = &trenchFluxRates;    break;
-    case POROUS_PAVEMENT: fluxRates = &pavementFluxRates;  break;
-    case RAIN_BARREL:     fluxRates = &barrelFluxRates;    break;
-    case ROOF_DISCON:     fluxRates = &roofFluxRates;      break;
-    case VEG_SWALE:       fluxRates = &swaleFluxRates;
-                          omega = 0.5;
-                          break;
-    default:              return 0.0;
+        xMin[ROOT] = theLidProc->soil.wiltPoint;
+        xMax[ROOT] = theLidProc->soil.porosity;
     }
 
     //... update moisture levels and flux rates over the time step
@@ -391,12 +383,25 @@ double lidproc_getOutflow(TLidUnit* lidUnit, TLidProc* lidProc, double inflow,
     if (theLidProc->lidType == TREEPIT)
     {
         // Assuming rungekutta45 is defined elsewhere and ready to be used
-        // This function should be designed to work with the specific requirements
-        // of the TREE_PIT calculations
         treepitFluxRates(x, f);
     }
     else
     {
+        //... determine which flux rate function to use
+        switch (theLidProc->lidType)
+        {
+        case BIO_CELL:
+        case RAIN_GARDEN:     fluxRates = &biocellFluxRates;   break;
+        case GREEN_ROOF:      fluxRates = &greenRoofFluxRates; break;
+        case INFIL_TRENCH:    fluxRates = &trenchFluxRates;    break;
+        case POROUS_PAVEMENT: fluxRates = &pavementFluxRates;  break;
+        case RAIN_BARREL:     fluxRates = &barrelFluxRates;    break;
+        case ROOF_DISCON:     fluxRates = &roofFluxRates;      break;
+        case VEG_SWALE:       fluxRates = &swaleFluxRates;
+                              omega = 0.5;
+                              break;
+        default:              return 0.0;
+        }
         i = modpuls_solve(MAX_LAYERS, x, xOld, xPrev, xMin, xMax, xTol,
                           fOld, f, tStep, omega, fluxRates);
     }
@@ -425,11 +430,12 @@ double lidproc_getOutflow(TLidUnit* lidUnit, TLidProc* lidProc, double inflow,
     }
 
     //... save updated results
-    theLidUnit->surfaceDepth = x[SURF];
-    theLidUnit->paveDepth    = x[PAVE];
-    theLidUnit->soilMoisture = x[SOIL];
-    theLidUnit->storageDepth = x[STOR];
-    theLidUnit->distpipeVol  = x[DISTPIPE];
+    theLidUnit->surfaceDepth    = x[SURF];
+    theLidUnit->paveDepth       = x[PAVE];
+    theLidUnit->soilMoisture    = x[SOIL];
+    theLidUnit->storageDepth    = x[STOR];
+    theLidUnit->distpipeVol     = x[DISTPIPE];
+    theLidUnit->soilMoisture2   = x[ROOT];
     for (i = 0; i < MAX_LAYERS; i++) theLidUnit->oldFluxRates[i] = f[i];
 
     //... assign values to LID unit evaporation, infiltration & drain flow
@@ -493,14 +499,15 @@ void lidproc_saveResults(TLidUnit* lidUnit, double ucfRainfall, double ucfRainDe
     {
         //... convert rate results to original units (in/hr or mm/hr)
         ucf = ucfRainfall;
-        rptVars[SURF_INFLOW]  = SurfaceInflow*ucf;
-        rptVars[TOTAL_EVAP]   = totalEvap*ucf;
-        rptVars[SURF_INFIL]   = SurfaceInfil*ucf;
-        rptVars[PAVE_PERC]    = PavePerc*ucf;
-        rptVars[SOIL_PERC]    = SoilPerc*ucf;
-        rptVars[STOR_EXFIL]   = StorageExfil*ucf;
-        rptVars[SURF_OUTFLOW] = SurfaceOutflow*ucf;
-        rptVars[STOR_DRAIN]   = StorageDrain*ucf;
+        rptVars[SURF_INFLOW]    = SurfaceInflow*ucf;
+        rptVars[TOTAL_EVAP]     = totalEvap*ucf;
+        rptVars[SURF_INFIL]     = SurfaceInfil*ucf;
+        rptVars[PAVE_PERC]      = PavePerc*ucf;
+        rptVars[SOIL_PERC]      = SoilPerc*ucf;
+        rptVars[STOR_EXFIL]     = StorageExfil*ucf;
+        rptVars[SURF_OUTFLOW]   = SurfaceOutflow*ucf;
+        rptVars[STOR_DRAIN]     = StorageDrain*ucf;
+        rptVars[DISTPIPE_EXFIL] = PipeExfil*ucf;
 
         //... convert storage results to original units (in or mm)
         ucf = ucfRainDepth;
@@ -530,11 +537,11 @@ void lidproc_saveResults(TLidUnit* lidUnit, double ucfRainfall, double ucfRainDe
             M_D_Y, getDateTime(NewRunoffTime), TIME_STAMP_SIZE, timeStamp);
         snprintf(theLidUnit->rptFile->results, sizeof(theLidUnit->rptFile->results),
              "\n%20s\t %8.3f\t %8.3f\t %8.4f\t %8.3f\t %8.3f\t %8.3f\t %8.3f\t"
-             "%8.3f\t %8.3f\t %8.3f\t %8.3f\t %8.3f\t %8.3f %8.3f\t %8.3f",
+             "%8.3f\t %8.3f\t %8.3f\t %8.3f\t %8.3f\t %8.3f\t %9.3f\t %9.3f\t %9.3f",
              timeStamp, elapsedHrs, rptVars[0], rptVars[1], rptVars[2],
              rptVars[3], rptVars[4], rptVars[5], rptVars[6], rptVars[7],
              rptVars[8], rptVars[9], rptVars[10], rptVars[11], rptVars[12],
-             rptVars[13]);
+             rptVars[13], rptVars[14]);
 
         //... if the current LID state is dry
         if ( isDry )
@@ -1341,8 +1348,12 @@ void getTreepitFluxes(double distpipeVol, double soilTheta, double storageDepth,
 
     //... calculate distribution pipe exfiltration rate
     PipeExfil = getPipeExfil(distpipeVol, distzoneDepth);
+    //... scale exfiltration by length of pipe
+    PipeExfil = theLidProc->distPipe.length * PipeExfil;
+
+    //... limit by max pipe exfiltration
     PipeExfil = MIN(PipeExfil, MaxPipeExfil);
-    //... convert exfiltration flow rate to m/s
+    //... convert exfiltration flow rate to ft/s
     PipeExfil = PipeExfil / surfaceArea;
 
     //... unsaturated zone perc rate
@@ -1452,6 +1463,7 @@ void treepitFluxRates(double x[], double f[])
     double distpipeVol;
     double pavementDepth;
     double soilTheta;
+    double rootedTheta;
     double storageDepth;
 
     // Intermediate variables
@@ -1476,7 +1488,14 @@ void treepitFluxRates(double x[], double f[])
     distpipeVol   = x[DISTPIPE];
     pavementDepth = x[PAVE];
     soilTheta     = x[SOIL];
+    rootedTheta   = x[ROOT];
     storageDepth  = x[STOR];
+
+    // --- set limit on DistPipe exfiltration based on volume in DistPipe
+    MaxPipeExfil = distpipeVol / Tstep;
+
+    // --- set limit on SoilInfiltration based on available volume in unsaturated Layer
+    MaxInfil = (soilPorosity - soilTheta) * soilThickness / Tstep;
 
     // --- calculate potential maximum transpiration
     // --- apply user-supplied LAI pattern
@@ -1501,7 +1520,7 @@ void treepitFluxRates(double x[], double f[])
 
     // --- integrate eqns. for d(Theta)/dt and d(LowerDepth)/dt
     //     NOTE: ODE solver must have been initialized previously
-    odesolve_integrate(x, 2, 0, Tstep, GWTOL, Tstep, getTreepitDxDt);
+    odesolve_integrate(x, 6, 0, Tstep, TREEPITTOL, Tstep, getTreepitDxDt);
 
     //... assign values to layer flux rates
     f[DISTPIPE] = SurfaceInflow - PipeExfil;
@@ -1594,11 +1613,13 @@ double getPipeExfil(double pipeVol, double pavementDepth)
 
     tempXsect.aFull = theLidProc->distPipe.aFull;
     tempXsect.yFull = theLidProc->distPipe.yFull;
+    tempXsect.type  = theLidProc->distPipe.type;
 
     // filledArea = (aFull * pipeVol) / (aFull * length)
     filledArea = pipeVol / theLidProc->distPipe.length;
     // calculate water level in distpipe
     waterLevel = xsect_getYofA(&tempXsect, filledArea);
+
     // take outside water level relative to inside water level
     outsideLevel = MAX(0, pavementDepth - theLidProc->distPipe.offset);
     delta = MAX(waterLevel - outsideLevel, 0);

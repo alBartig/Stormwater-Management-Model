@@ -629,8 +629,8 @@ int readDistPipeData(int j, char* toks[], int ntoks)
     int    i;
     double x[5];
 
-    if ( ntoks < 6 ) return error_setInpError(ERR_ITEMS, "");
-    for (i = 2; i < 5; i++)
+    if ( ntoks < 7 ) return error_setInpError(ERR_ITEMS, "");
+    for (i = 2; i < 6; i++)
     {
         if ( ! getDouble(toks[i], &x[i-2]) || x[i-2] < 0.0 )
             return error_setInpError(ERR_NUMBER, toks[i]);
@@ -645,15 +645,15 @@ int readDistPipeData(int j, char* toks[], int ntoks)
     }
 
     LidProcs[j].distPipe.diameter      = x[0] / UCF(RAINDEPTH);
-    LidProcs[j].distPipe.length        = x[1];
+    LidProcs[j].distPipe.length        = x[1] / UCF(LENGTH);
     LidProcs[j].distPipe.coeff         = x[2];
     LidProcs[j].distPipe.expon         = x[3];
     LidProcs[j].distPipe.offset        = x[4] / UCF(RAINDEPTH);
     LidProcs[j].distPipe.qCurve        = i;
     LidProcs[j].distPipe.type          = CIRCULAR;
-    LidProcs[j].distPipe.yFull         = x[0] / UCF(RAINDEPTH);
-    LidProcs[j].distPipe.aFull         = M_PI * pow(x[0] / UCF(RAINDEPTH), 2) / 4;
-    LidProcs[j].distPipe.vFull         = x[1] * M_PI * pow(x[0] / UCF(RAINDEPTH), 2) / 4;
+    LidProcs[j].distPipe.yFull         = LidProcs[j].distPipe.diameter;
+    LidProcs[j].distPipe.aFull         = M_PI * pow(LidProcs[j].distPipe.diameter, 2) / 4;
+    LidProcs[j].distPipe.vFull         = LidProcs[j].distPipe.length * M_PI * pow(LidProcs[j].distPipe.diameter, 2) / 4;
 
     return 0;
 }
@@ -694,7 +694,7 @@ int readTreeLayerData(int j, char* toks[], int ntoks)
     LidProcs[j].tree.h2            = x[0];
     LidProcs[j].tree.h3            = x[1];
     LidProcs[j].tree.LAI           = x[2];
-    LidProcs[j].tree.crownArea     = x[3] / UCF(LANDAREA);
+    LidProcs[j].tree.crownArea     = x[3] / UCF(SURFACEAREA);
     LidProcs[j].tree.fracRooted    = x[4];
     LidProcs[j].tree.LAICurve      = i;
 
@@ -1105,6 +1105,19 @@ void validateLidProc(int j)
         }
     }
 
+    //... check tree layer parameters
+    if (LidProcs[j].lidType == TREEPIT )
+    {
+        if (LidProcs[j].tree.h2             >= LidProcs[j].soil.porosity
+        || LidProcs[j].tree.h3          >= LidProcs[j].tree.h2
+        || LidProcs[j].soil.wiltPoint   >= LidProcs[j].tree.h3 )
+        {
+            sstrncpy(Msg, LidProcs[j].ID, MAXMSG);
+            sstrcat(Msg, ERR_TREE_LAYER, MAXMSG);
+            report_writeErrorMsg(ERR_LID_PARAMS, Msg);
+        }
+    }
+
     //... check soil layer parameters
     if ( LidProcs[j].soil.thickness > 0.0 )
     {
@@ -1118,16 +1131,6 @@ void validateLidProc(int j)
             sstrcat(Msg, ERR_SOIL_LAYER, MAXMSG);
             report_writeErrorMsg(ERR_LID_PARAMS, Msg);
         }
-    }
-
-    //... check tree layer parameters
-    if ( LidProcs[j].tree.h2 >= LidProcs[j].soil.porosity
-         || LidProcs[j].tree.h3 >= LidProcs[j].tree.h2
-         || LidProcs[j].soil.wiltPoint >= LidProcs[j].tree.h3 )
-    {
-        sstrncpy(Msg, LidProcs[j].ID, MAXMSG);
-        sstrcat(Msg, ERR_TREE_LAYER, MAXMSG);
-        report_writeErrorMsg(ERR_LID_PARAMS, Msg);
     }
 
     //... check storage layer parameters
@@ -1365,7 +1368,9 @@ void lid_initState()
             lidUnit->surfaceDepth = 0.0;
             lidUnit->storageDepth = 0.0;
             lidUnit->soilMoisture = 0.0;
+            lidUnit->soilMoisture2 = 0.0;
             lidUnit->paveDepth = 0.0;
+            lidUnit->distpipeVol = 0.0;
             lidUnit->dryTime = initDryTime;
             lidUnit->volTreated = 0.0;
             lidUnit->nextRegenDay = LidProcs[k].pavement.regenDays;
@@ -1375,6 +1380,14 @@ void lid_initState()
                 lidUnit->soilMoisture = LidProcs[k].soil.wiltPoint + 
                     lidUnit->initSat * (LidProcs[k].soil.porosity -
                     LidProcs[k].soil.wiltPoint);
+                if ( LidProcs[k].lidType == TREEPIT)
+                {
+                    lidUnit->soilMoisture2 = LidProcs[k].soil.wiltPoint +
+                                             lidUnit->initSat * (LidProcs[k].soil.porosity -
+                                                                 LidProcs[k].soil.wiltPoint);
+                    initVol += (1 - LidProcs[k].tree.fracRooted) * lidUnit->soilMoisture * LidProcs[k].soil.thickness +
+                            LidProcs[k].tree.fracRooted * lidUnit->soilMoisture2 * LidProcs[k].soil.thickness;
+                }
                 initVol += lidUnit->soilMoisture * LidProcs[k].soil.thickness;
             }
             if ( LidProcs[k].storage.thickness > 0.0 )
@@ -2105,27 +2118,27 @@ void initLidRptFile(char* title, char* lidID, char* subcatchID, TLidUnit* lidUni
 //  Output:  none
 //
 {
-    static int colCount = 16;
+    static int colCount = 17;
     static char* head1[] = {
         "\n                    \t", "  Elapsed\t",
         "    Total\t", "    Total\t", "  Surface\t", " Pavement\t", "     Soil\t",
         "  Storage\t", "  Surface\t", "    Drain\t", "  Surface\t", " Pavement\t",
-        "     Soil\t", " Storage\t", "DistPipe\t", "     Soil"};
+        "     Soil\t", " Storage\t", " DistPipe\t", "   Rooted\t", " DistPipe"};
     static char* head2[] = {
         "\n                    \t", "     Time\t",
         "   Inflow\t", "     Evap\t", "    Infil\t", "     Perc\t", "     Perc\t",
         "    Exfil\t", "   Runoff\t", "  OutFlow\t", "    Level\t", "    Level\t",
-        " Moisture\t", "  Level\t", "  Volume\t", "   Moisture"};
+        " Moisture\t", "   Level\t", "   Volume\t", " Moisture\t", "   Exfil."};
     static char* units1[] = {
         "\nDate        Time    \t", "    Hours\t",
         "    in/hr\t", "    in/hr\t", "    in/hr\t", "    in/hr\t", "    in/hr\t",
         "    in/hr\t", "    in/hr\t", "    in/hr\t", "   inches\t", "   inches\t",
-        "  Content\t", " inches\t", "      cft\t", "  Content2"};
+        "  Content\t", "  inches\t", "      cft\t", "  Content\t", "    in/hr"};
     static char* units2[] = {
         "\nDate        Time    \t", "    Hours\t",
         "    mm/hr\t", "    mm/hr\t", "    mm/hr\t", "    mm/hr\t", "    mm/hr\t",
         "    mm/hr\t", "    mm/hr\t", "    mm/hr\t", "       mm\t", "       mm\t",
-        "  Content\t", "     mm\t", "       L\t", "   Content2"};
+        "  Content\t", "      mm\t", "       m3\t", "  Content\t", "    mm/hr"};
     static char line9[] = " ---------";
     int   i;
     FILE* f = lidUnit->rptFile->file;

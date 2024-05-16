@@ -126,7 +126,7 @@
 //-----------------------------------------------------------------------------
 //  Unit conversion factors
 //-----------------------------------------------------------------------------
-const double Ucf[10][2] = 
+const double Ucf[11][2] =
       {//  US      SI
       {43200.0,   1097280.0 },         // RAINFALL (in/hr, mm/hr --> ft/sec)
       {12.0,      304.8     },         // RAINDEPTH (in, mm --> ft)
@@ -137,7 +137,8 @@ const double Ucf[10][2] =
       {1.0,       1.608     },         // WINDSPEED (mph, km/hr --> mph)
       {1.0,       1.8       },         // TEMPERATURE (deg F, deg C --> deg F)
       {2.203e-6,  1.0e-6    },         // MASS (lb, kg --> mg)
-      {43560.0,   3048.0    }          // GWFLOW (cfs/ac, cms/ha --> ft/sec)
+      {43560.0,   3048.0    },          // GWFLOW (cfs/ac, cms/ha --> ft/sec)
+      {1.0, 0.0929}         // SURFACEAREA (ft2, m2 --> ft2)
       };
 
 // OWA EDIT #######################################################

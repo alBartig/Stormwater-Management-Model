@@ -64,7 +64,7 @@ enum TimePeriod {
 //-----------------------------------------------------------------------------
 //  Data Structures
 //-----------------------------------------------------------------------------
-#define MAX_LAYERS 5
+#define MAX_LAYERS 6
 
 // LID Surface Layer
 typedef struct

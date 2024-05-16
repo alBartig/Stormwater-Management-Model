@@ -177,6 +177,7 @@
       TEMPERATURE,
       MASS,
       GWFLOW,
+      SURFACEAREA,
       FLOW};                           // Flow must always be listed last
 
 //-------------------------------------

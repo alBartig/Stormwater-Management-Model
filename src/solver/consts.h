@@ -26,7 +26,7 @@
 #define   MAXFNAME           259            // Max. # characters in file name
 #define   MAXTOKS            40             // Max. items per line of input
 #define   MAXSTATES          10             // Max. # computed hyd. variables
-#define   MAXODES            4              // Max. # ODE's to be solved
+#define   MAXODES            6              // Max. # ODE's to be solved
 #define   NA                 -1             // NOT APPLICABLE code
 #define   TRUE               1              // Value for TRUE state
 #define   FALSE              0              // Value for FALSE state
