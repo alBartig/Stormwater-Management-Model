@@ -74,7 +74,8 @@
 //-----------------------------------------------------------------------------
 #define STOPTOL  0.00328     // integration error tolerance in ft (= 1 mm)
 #define MINFLOW  2.3e-8      // flow cutoff for dry conditions (= 0.001 in/hr)
-static const double TREEPITTOL = 0.0001;    // ODE solver tolerance
+static const double TREEPITTOL = 0.001;    // ODE solver tolerance
+static const double XTOL  = 0.001;     // tolerance for moisture & depth
 
 //-----------------------------------------------------------------------------
 //  Enumerations
@@ -1338,12 +1339,13 @@ void getTreepitFluxes(double distpipeVol, double soilTheta, double storageDepth,
 //  Purpose: computes water fluxes into/out of upper/lower GW zones.
 //
 {
+    double maxRate;
+
     // LID layer properties
     double soilThickness    = theLidProc->soil.thickness;
     double soilPorosity     = theLidProc->soil.porosity;
     double soilFieldCap     = theLidProc->soil.fieldCap;
     double soilWiltPoint    = theLidProc->soil.wiltPoint;
-    double satConduct       = theLidProc->soil.kSat;
     double surfaceArea      = theLidUnit->area;
 
     //... calculate distribution pipe exfiltration rate
@@ -1362,9 +1364,9 @@ void getTreepitFluxes(double distpipeVol, double soilTheta, double storageDepth,
 
     //... exfiltration rate out of saturated zone
     StorageExfil = getStorageExfilRate();
-    StorageExfil = MIN(StorageExfil, satConduct);
-    MaxStorageExfil += SoilPerc;
-    StorageExfil = MIN(StorageExfil, MaxStorageExfil);
+
+    maxRate = MaxStorageExfil + SoilPerc;
+    StorageExfil = MIN(StorageExfil, maxRate);
     StorageExfil = MAX(StorageExfil, 0.0);
 
     //... underdrain flow rate
@@ -1373,14 +1375,14 @@ void getTreepitFluxes(double distpipeVol, double soilTheta, double storageDepth,
     {
         StorageDrain = getTreepitDrainRate(storageDepth, soilTheta,
                                            distzoneDepth);
+        maxRate = MaxStorageDrain + SoilPerc - StorageExfil;
+        StorageDrain = MIN(StorageDrain, maxRate);
+        StorageDrain = MAX(StorageDrain, 0.0);
     }
-    MaxStorageDrain = MaxStorageDrain + SoilPerc - StorageExfil;
-    StorageDrain = MIN(StorageDrain, MaxStorageDrain);
-    StorageDrain = MAX(StorageDrain, 0.0);
 
     //... limit infiltration by available volume and outflow
-    MaxInfil += MIN(SoilPerc, (StorageDrain + StorageExfil));
-    SurfaceInfil = MIN(SurfaceInfil, MaxInfil);
+    maxRate = MaxInfil + SoilPerc;
+    SurfaceInfil = MIN(SurfaceInfil, maxRate);
 }
 
 //=============================================================================
@@ -1403,47 +1405,31 @@ void  getTreepitDxDt(double t, double* x, double* dxdt)
     double qLower;    // inflow - outflow for lower zone (ft/sec)
     double denom;
 
-    // Moisture level variables
-    double distpipeVol;
-    double distzoneDepth;
-    double soilTheta;
-    double storageDepth;
-
     // LID layer properties
-    double distpipePorosity = theLidProc->pavement.voidFrac;
-    double soilThickness    = theLidProc->soil.thickness;
-    double soilPorosity     = theLidProc->soil.porosity;
     double soilFieldCap     = theLidProc->soil.fieldCap;
     double soilWiltPoint    = theLidProc->soil.wiltPoint;
     double satConduct       = theLidProc->soil.kSat;
-    double surfaceArea      = theLidUnit->area;
 
-    //... retrieve moisture levels from input vector
-    distpipeVol    = x[DISTPIPE];
-    distzoneDepth  = x[PAVE];
-    soilTheta      = x[SOIL];
-    storageDepth   = x[STOR];
-
-    getTreepitFluxes(distpipeVol, soilTheta, storageDepth, distzoneDepth);
+    //... calculate fluxes
+    getTreepitFluxes(x[DISTPIPE], x[SOIL], x[STOR], x[PAVE]);
 
     //... calculate net fluxes
     qUpper = SurfaceInfil - SoilEvap - SoilPerc;
     qLower = SoilPerc - StorageExfil - StorageDrain;
 
-    dxdt[DISTPIPE] = ( SurfaceInflow - PipeExfil ) * surfaceArea;
-    dxdt[PAVE] = (PipeExfil - SurfaceInfil) / distpipePorosity;
+    dxdt[DISTPIPE] = ( SurfaceInflow - PipeExfil ) * theLidUnit->area;
+    dxdt[PAVE] = (PipeExfil - SurfaceInfil) / theLidProc->pavement.voidFrac;
 
     // --- d(upper zone moisture)/dt = (net upper zone flow) /
     //                                 (upper zone depth)
-    denom = soilThickness - storageDepth;
+    denom = theLidProc->soil.thickness - x[STOR];
     if (denom > 0.0)
         dxdt[SOIL] = qUpper / denom;
     else
         dxdt[SOIL] = 0.0;
-
     // --- d(lower zone depth)/dt = (net lower zone flow) /
     //                              (upper zone moisture deficit)
-    denom = soilPorosity - soilTheta;
+    denom = theLidProc->soil.porosity - x[SOIL];
     if (denom > 0.0)
         dxdt[STOR] = qLower / denom;
     else
@@ -1521,6 +1507,29 @@ void treepitFluxRates(double x[], double f[])
     // --- integrate eqns. for d(Theta)/dt and d(LowerDepth)/dt
     //     NOTE: ODE solver must have been initialized previously
     odesolve_integrate(x, 6, 0, Tstep, TREEPITTOL, Tstep, getTreepitDxDt);
+
+    // --- keep state variables within allowable bounds
+    x[DISTPIPE] = MAX(x[DISTPIPE], 0.0);
+    if ( x[DISTPIPE] >= distpipeVol )
+    {
+        x[PAVE] = distpipeVol;
+    }
+    x[PAVE] = MAX(x[PAVE], 0.0);
+    if ( x[PAVE] >= pavementDepth )
+    {
+        x[PAVE] = pavementDepth;
+    }
+    x[SOIL] = MAX(x[SOIL], soilWiltPoint);
+    if ( x[SOIL] >= soilPorosity )
+    {
+        x[SOIL] = soilPorosity - XTOL;
+        x[STOR] = soilThickness - XTOL;
+    }
+    x[STOR] = MAX(x[STOR],  0.0);
+    if ( x[STOR] >= soilThickness )
+    {
+        x[STOR] = soilThickness - XTOL;
+    }
 
     //... assign values to layer flux rates
     f[DISTPIPE] = SurfaceInflow - PipeExfil;
