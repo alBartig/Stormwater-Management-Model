@@ -677,7 +677,7 @@ int readTreeLayerData(int j, char* toks[], int ntoks)
     double x[5];
 
     if ( ntoks < 6 ) return error_setInpError(ERR_ITEMS, "");
-    for (i = 2; i < 5; i++)
+    for (i = 2; i < 7; i++)
     {
         if ( ! getDouble(toks[i], &x[i-2]) || x[i-2] < 0.0 )
             return error_setInpError(ERR_NUMBER, toks[i]);

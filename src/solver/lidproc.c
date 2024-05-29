@@ -1469,7 +1469,6 @@ void treepitFluxRates(double x[], double f[])
     double crownArea        = theLidProc->tree.crownArea;
     double fracRooted       = theLidProc->tree.fracRooted;
 
-
     //... retrieve moisture levels from input vector
     distpipeVol   = x[DISTPIPE];
     pavementDepth = x[PAVE];
@@ -1490,15 +1489,18 @@ void treepitFluxRates(double x[], double f[])
         month = datetime_monthOfYear(currentDate) - 1;
         lai *= table_lookup(&Curve[curve], month);
     }
+//    printf("crownArea: %.1f, fracRooted %.1f ", crownArea, fracRooted);
     transpRate = EvapRate * lai * crownArea / theLidUnit->area;
     transpRate = transpRate * getWaterStressResponse(soilTheta);
     // --- set limit on transpiration rate from upper GW zone
-    SoilEvap = MIN((soilTheta - soilWiltPoint) * fracRooted * (soilThickness - storageDepth) / Tstep, transpRate);
+    vUnsat = (soilTheta - soilWiltPoint) * fracRooted * (soilThickness - storageDepth);
+    vUnsat = MAX(0.0, vUnsat);
+    SoilEvap = MIN(vUnsat / Tstep, transpRate);
 
     // --- set limit on percolation rate from upper to lower GW zone
     vUnsat = (soilThickness - storageDepth) * (soilTheta - soilFieldCap);
-    vUnsat = MAX(0.0, vUnsat);
     MaxSoilPerc = vUnsat / Tstep - SoilEvap;
+    MaxSoilPerc = MAX(0.0, MaxSoilPerc);
 
     // --- set limit on GW flow out of aquifer based on volume of lower zone
     MaxStorageExfil = storageDepth*soilPorosity / Tstep;
@@ -1933,11 +1935,11 @@ double getWaterStressResponse(double theta)
     if (theta <= h4) {
         return 0.0;
     } else if (theta < h1 && theta > h2) {
-        return table_interpolate(theta, h2, h1, 1.0, 0.0);
+        return table_interpolate(theta, h2, 1.0, h1, 0.0);
     } else if (theta <= h2 && theta >= h3) {
         return 1.0;
     } else if (theta < h3 && theta > h4) {
-        return table_interpolate(theta, h4, h3, 0.0, 1.0);
+        return table_interpolate(theta, h4, 0.0, h3, 1.0);
     } else return 0.0; // (theta >= h1)
 }
 
