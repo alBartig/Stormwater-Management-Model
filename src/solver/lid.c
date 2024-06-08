@@ -629,20 +629,24 @@ int readDistPipeData(int j, char* toks[], int ntoks)
     int    i;
     double x[5];
 
+    printf("reading DistPipeData\n");
     if ( ntoks < 7 ) return error_setInpError(ERR_ITEMS, "");
-    for (i = 2; i < 6; i++)
+    for (i = 0; i < 5; i++) x[i] = 0.0;
+    for (i = 2; i < 7; i++)
     {
         if ( ! getDouble(toks[i], &x[i-2]) || x[i-2] < 0.0 )
             return error_setInpError(ERR_NUMBER, toks[i]);
     }
-    if ( x[0] == 0.0 ) x[1] = 0.0;
 
     i = -1;
-    if ( ntoks >= 9 )
+    if ( ntoks >= 8 )
     {
-        i = project_findObject(CURVE, toks[8]);
-        if (i < 0) return error_setInpError(ERR_NAME, toks[8]);
+        i = project_findObject(CURVE, toks[7]);
+        if (i < 0) return error_setInpError(ERR_NAME, toks[7]);
     }
+    printf("Distpipe:\n");
+//    i=0;
+//    for (i = 0; i < 5; i++) printf("%.d: %.5f\n", i, x[i]);
 
     LidProcs[j].distPipe.diameter      = x[0] / UCF(RAINDEPTH);
     LidProcs[j].distPipe.length        = x[1] / UCF(LENGTH);
@@ -655,6 +659,10 @@ int readDistPipeData(int j, char* toks[], int ntoks)
     LidProcs[j].distPipe.aFull         = M_PI * pow(LidProcs[j].distPipe.diameter, 2) / 4;
     LidProcs[j].distPipe.vFull         = LidProcs[j].distPipe.length * M_PI * pow(LidProcs[j].distPipe.diameter, 2) / 4;
 
+    i=0;
+    for (i = 0; i < 5; i++) printf("%.d: %.5f\n", i, x[i]);
+
+    printf("read done\n");
     return 0;
 }
 
@@ -675,21 +683,29 @@ int readTreeLayerData(int j, char* toks[], int ntoks)
 {
     int    i;
     double x[5];
+    printf("reading Treepit Data\n");
 
-    if ( ntoks < 6 ) return error_setInpError(ERR_ITEMS, "");
+    printf("iterating toks\n");
+
+    if ( ntoks < 7 ) return error_setInpError(ERR_ITEMS, "");
+    printf("ntoks >= 7 check passed\n");
+    for (i = 0; i < 5; i++) x[i] = 0.0;
     for (i = 2; i < 7; i++)
     {
+        printf("tok: %d\n", i);
         if ( ! getDouble(toks[i], &x[i-2]) || x[i-2] < 0.0 )
             return error_setInpError(ERR_NUMBER, toks[i]);
     }
-    if ( x[0] == 0.0 ) x[1] = 0.0;
+
+    printf("checking for curve toks\n");
 
     i = -1;
-    if ( ntoks >= 9 )
+    if ( ntoks >= 8 )
     {
-        i = project_findObject(CURVE, toks[8]);
-        if (i < 0) return error_setInpError(ERR_NAME, toks[8]);
+        i = project_findObject(CURVE, toks[7]);
+        if (i < 0) return error_setInpError(ERR_NAME, toks[7]);
     }
+    printf("Treepit:\n");
 
     LidProcs[j].tree.h2            = x[0];
     LidProcs[j].tree.h3            = x[1];
@@ -697,6 +713,9 @@ int readTreeLayerData(int j, char* toks[], int ntoks)
     LidProcs[j].tree.crownArea     = x[3] / UCF(SURFACEAREA);
     LidProcs[j].tree.fracRooted    = x[4];
     LidProcs[j].tree.LAICurve      = i;
+    printf("read done\n");
+    i=0;
+    for (i = 0; i < 5; i++) printf("%.d: %.5f\n", i, x[i]);
 
     return 0;
 }
@@ -1082,6 +1101,10 @@ void validateLidProc(int j)
     case INFIL_TRENCH:
         if ( LidProcs[j].storage.thickness <= 0.0 ) layerMissing = TRUE;
         break;
+    case TREEPIT:
+        if ( LidProcs[j].tree.h2 <= 0.0 ) layerMissing = TRUE;
+        if ( LidProcs[j].distPipe.diameter <= 0.0 ) layerMissing = TRUE;
+        break;
     }
     if ( layerMissing )
     {
@@ -1109,8 +1132,18 @@ void validateLidProc(int j)
     if (LidProcs[j].lidType == TREEPIT )
     {
         if (LidProcs[j].tree.h2             >= LidProcs[j].soil.porosity
-        || LidProcs[j].tree.h3          >= LidProcs[j].tree.h2
-        || LidProcs[j].soil.wiltPoint   >= LidProcs[j].tree.h3 )
+        || LidProcs[j].tree.h3              >= LidProcs[j].tree.h2
+        || LidProcs[j].soil.wiltPoint       >= LidProcs[j].tree.h3
+        || LidProcs[j].tree.fracRooted      <  0.0
+        || LidProcs[j].tree.fracRooted      >  1.0
+        || LidProcs[j].tree.LAI             <= 0.0
+        || LidProcs[j].tree.crownArea       <= 0.0
+        || LidProcs[j].distPipe.diameter    <= 0.0
+        || LidProcs[j].distPipe.length      <= 0.0
+        || LidProcs[j].distPipe.coeff       <= 0.0
+        || LidProcs[j].distPipe.offset      <  0.0
+        || LidProcs[j].distPipe.offset      >  LidProcs[j].pavement.thickness
+        )
         {
             sstrncpy(Msg, LidProcs[j].ID, MAXMSG);
             sstrcat(Msg, ERR_TREE_LAYER, MAXMSG);
@@ -1277,6 +1310,12 @@ void validateLidGroup(int j)
                 sstrcat(Msg, ERR_SOIL_LAYER, MAXMSG);
                 report_writeErrorMsg(ERR_LID_PARAMS, Msg);
             }
+            if ( grnampt_setParams(&(lidUnit->rootedInfil), p) == FALSE )
+            {
+                sstrncpy(Msg, LidProcs[k].ID, MAXMSG);
+                sstrcat(Msg, ERR_SOIL_LAYER, MAXMSG);
+                report_writeErrorMsg(ERR_LID_PARAMS, Msg);
+            }
         }
         
         //... assign vegetative swale infiltration parameters
@@ -1382,11 +1421,7 @@ void lid_initState()
                     LidProcs[k].soil.wiltPoint);
                 if ( LidProcs[k].lidType == TREEPIT)
                 {
-                    lidUnit->soilMoisture2 = LidProcs[k].soil.wiltPoint +
-                                             lidUnit->initSat * (LidProcs[k].soil.porosity -
-                                                                 LidProcs[k].soil.wiltPoint);
-                    initVol += (1 - LidProcs[k].tree.fracRooted) * lidUnit->soilMoisture * LidProcs[k].soil.thickness +
-                            LidProcs[k].tree.fracRooted * lidUnit->soilMoisture2 * LidProcs[k].soil.thickness;
+                    lidUnit->soilMoisture2 = lidUnit->soilMoisture;
                 }
                 initVol += lidUnit->soilMoisture * LidProcs[k].soil.thickness;
             }

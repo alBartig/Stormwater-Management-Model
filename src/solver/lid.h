@@ -236,7 +236,8 @@ typedef struct
     int      drainNode;      // node receiving drain flow
     TLidRptFile* rptFile;    // pointer to detailed report file
 
-    TGrnAmpt soilInfil;      // infil. object for biocell soil layer 
+    TGrnAmpt soilInfil;      // infil. object for biocell soil layer
+    TGrnAmpt rootedInfil;    // infil. object for biocell tree layer
     double   surfaceDepth;   // depth of ponded water on surface layer (ft)
     double   paveDepth;      // depth of water in porous pavement layer
     double   soilMoisture;   // moisture content of biocell soil layer

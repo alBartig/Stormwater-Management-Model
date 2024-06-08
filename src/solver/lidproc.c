@@ -124,10 +124,12 @@ static double     MaxNativeInfil; // native soil infil. rate limit (ft/s)
 
 static double     SurfaceInflow;  // precip. + runon to LID unit (ft/s)
 static double     SurfaceInfil;   // infil. rate from surface layer (ft/s)
+static double     RootedInfil;    // infil. rate from surface into rooted layer (ft/s)
 static double     SurfaceEvap;    // evap. rate from surface layer (ft/s)
 static double     SurfaceOutflow; // outflow from surface layer (ft/s)
 static double     SurfaceVolume;  // volume in surface storage (ft)
 static double     MaxInfil;       // maximum infiltration rate (ft/s)
+static double     MaxInfilRooted; // maximum infiltration rate (ft/s)
 
 static double     PaveEvap;       // evap. from pavement layer (ft/s)
 static double     PavePerc;       // percolation from pavement layer (ft/s)
@@ -135,8 +137,11 @@ static double     PaveVolume;     // volume stored in pavement layer  (ft)
 
 static double     SoilEvap;       // evap. from soil layer (ft/s)
 static double     SoilPerc;       // percolation from soil layer (ft/s)
+static double     RootedPerc; // percolation from rooted soil layer (ft/s)
 static double     SoilVolume;     // volume in soil/pavement storage (ft)
+static double     RootedVolume;   // volume in rooted soil storage (ft)
 static double     MaxSoilPerc;    // maximum percolation from upper to lower zone (ft/s)
+static double     MaxSoilPercRooted;    // maximum percolation from upper to lower zone (ft/s)
 
 static double     StorageInflow;  // inflow rate to storage layer (ft/s)
 static double     StorageExfil;   // exfil. rate from storage layer (ft/s)
@@ -175,7 +180,7 @@ static double getSurfaceOutflowRate(double depth);
 static double getSurfaceOverflowRate(double* surfaceDepth);
 static double getPipeOverflowRate(double* distpipeVol);
 static double getPavementPermRate(void);
-static double getPipeExfil(double pipeDepth, double pavementDepth);
+static double getPipeExfil(double pipeVol, double pavementDepth);
 static double getSoilPercRate(double theta);
 static double getStorageExfilRate(void);
 static double getStorageDrainRate(double storageDepth, double soilTheta,
@@ -186,7 +191,7 @@ static double getDrainMatOutflow(double depth);
 static void   getEvapRates(double surfaceVol, double paveVol,
               double soilVol, double storageVol, double pervFrac);
 static double getWaterStressResponse(double theta);
-static void   getTreepitFluxes(double surfaceDepth, double soilTheta,
+static void   getTreepitFluxes(double surfaceDepth, double soilTheta, double rootedTheta,
                                double storageDepth, double distzoneDepth);
 
 static void   updateWaterBalance(TLidUnit *lidUnit, double inflow,
@@ -314,15 +319,19 @@ double lidproc_getOutflow(TLidUnit* lidUnit, TLidProc* lidProc, double inflow,
     SurfaceVolume  = 0.0;
     PaveVolume     = 0.0;
     SoilVolume     = 0.0;
+    RootedVolume   = 0.0;
     StorageVolume  = 0.0;
     SurfaceInflow  = inflow;
     SurfaceInfil   = 0.0;
+    RootedInfil    = 0.0;
     SurfaceEvap    = 0.0;
     SurfaceOutflow = 0.0;
+    PipeExfil      = 0.0;
     PaveEvap       = 0.0;
     PavePerc       = 0.0;
     SoilEvap       = 0.0;
     SoilPerc       = 0.0;
+    RootedPerc     = 0.0;
     StorageInflow  = 0.0;
     StorageExfil   = 0.0;
     StorageEvap    = 0.0;
@@ -345,6 +354,12 @@ double lidproc_getOutflow(TLidUnit* lidUnit, TLidProc* lidProc, double inflow,
                 grnampt_getInfil(&theLidUnit->soilInfil, Tstep,
                                         PipeExfil, theLidUnit->paveDepth,
                                         MOD_GREEN_AMPT);
+        RootedInfil = SurfaceInfil;
+        // calculate infiltration into rooted soil layer from pavement layer
+//        RootedInfil =
+//                grnampt_getInfil(&theLidUnit->rootedInfil, Tstep,
+//                                 PipeExfil, theLidUnit->paveDepth,
+//                                 MOD_GREEN_AMPT);
     }
     else if ( theLidUnit->soilInfil.Ks > 0.0 )
     {
@@ -1331,7 +1346,7 @@ void barrelFluxRates(double x[], double f[])
 
 //=============================================================================
 
-void getTreepitFluxes(double distpipeVol, double soilTheta, double storageDepth, double distzoneDepth)
+void getTreepitFluxes(double distpipeVol, double soilTheta, double rootedTheta, double storageDepth, double distzoneDepth)
 //
 //  Input:   upperVolume = vol. depth of upper zone (ft)
 //           upperDepth  = depth of upper zone (ft)
@@ -1347,6 +1362,7 @@ void getTreepitFluxes(double distpipeVol, double soilTheta, double storageDepth,
     double soilFieldCap     = theLidProc->soil.fieldCap;
     double soilWiltPoint    = theLidProc->soil.wiltPoint;
     double surfaceArea      = theLidUnit->area;
+    double fracRooted       = theLidProc->tree.fracRooted;
 
     //... calculate distribution pipe exfiltration rate
     PipeExfil = getPipeExfil(distpipeVol, distzoneDepth);
@@ -1358,14 +1374,29 @@ void getTreepitFluxes(double distpipeVol, double soilTheta, double storageDepth,
     //... convert exfiltration flow rate to ft/s
     PipeExfil = PipeExfil / surfaceArea;
 
-    //... unsaturated zone perc rate
+    //... unsaturated unrooted zone perc rate
     SoilPerc = getSoilPercRate(soilTheta);
-    SoilPerc = MIN(SoilPerc, MaxSoilPerc);
+    if (fracRooted < 1.0) {
+        maxRate = MaxSoilPerc / (1.0 - fracRooted);
+        SoilPerc = MIN(SoilPerc, maxRate);
+    } else {
+        SoilPerc = 0.0;
+    }
+    //... unsaturated rooted zone perc rate
+    RootedPerc = getSoilPercRate(rootedTheta);
+    if (fracRooted > 0.0) {
+        maxRate = MaxSoilPercRooted / fracRooted;
+        SoilPerc = MIN(SoilPerc, maxRate);
+    } else {
+        RootedPerc = 0.0;
+    }
+//    printf("ThetaR: %.2f, calculated RootedPerc: %.5f", rootedTheta, RootedPerc);
+//    printf(", limited RootedPerc: %.5f\n", RootedPerc);
 
     //... exfiltration rate out of saturated zone
     StorageExfil = getStorageExfilRate();
 
-    maxRate = MaxStorageExfil + SoilPerc;
+    maxRate = MaxStorageExfil + ( 1.0 - fracRooted ) * SoilPerc + fracRooted * RootedPerc;
     StorageExfil = MIN(StorageExfil, maxRate);
     StorageExfil = MAX(StorageExfil, 0.0);
 
@@ -1375,14 +1406,17 @@ void getTreepitFluxes(double distpipeVol, double soilTheta, double storageDepth,
     {
         StorageDrain = getTreepitDrainRate(storageDepth, soilTheta,
                                            distzoneDepth);
-        maxRate = MaxStorageDrain + SoilPerc - StorageExfil;
+        maxRate = MaxStorageDrain + ( 1 - fracRooted ) * SoilPerc + fracRooted * RootedPerc - StorageExfil;
         StorageDrain = MIN(StorageDrain, maxRate);
         StorageDrain = MAX(StorageDrain, 0.0);
     }
 
     //... limit infiltration by available volume and outflow
-    maxRate = MaxInfil + SoilPerc;
-    SurfaceInfil = MIN(SurfaceInfil, maxRate);
+//    maxRate = MaxInfil + SoilPerc;
+//    SurfaceInfil = MIN(SurfaceInfil, maxRate);
+//    maxRate = MaxInfilRooted + RootedPerc;
+//    RootedInfil = MIN(RootedInfil, maxRate);
+
 }
 
 //=============================================================================
@@ -1401,35 +1435,54 @@ void  getTreepitDxDt(double t, double* x, double* dxdt)
 //  Output:  f = vector of flux rates
 //
 {
-    double qUpper;    // inflow - outflow for upper zone (ft/sec)
-    double qLower;    // inflow - outflow for lower zone (ft/sec)
+    double qUpperRooted;    // inflow - outflow for upper rooted zone (ft/sec)
+    double qUpperUnrooted;  // inflow - outflow for upper unrooted zone (ft/sec)
+    double qLower;          // inflow - outflow for lower zone (ft/sec)
     double denom;
 
     // LID layer properties
-    double soilFieldCap     = theLidProc->soil.fieldCap;
-    double soilWiltPoint    = theLidProc->soil.wiltPoint;
-    double satConduct       = theLidProc->soil.kSat;
+    double soilFieldCap = theLidProc->soil.fieldCap;
+    double soilWiltPoint = theLidProc->soil.wiltPoint;
+    double satConduct = theLidProc->soil.kSat;
+    double fracRooted = theLidProc->tree.fracRooted;
 
     //... calculate fluxes
-    getTreepitFluxes(x[DISTPIPE], x[SOIL], x[STOR], x[PAVE]);
+    getTreepitFluxes(x[DISTPIPE], x[SOIL], x[ROOT], x[STOR], x[PAVE]);
 
     //... calculate net fluxes
-    qUpper = SurfaceInfil - SoilEvap - SoilPerc;
-    qLower = SoilPerc - StorageExfil - StorageDrain;
+    if (fracRooted > 0.0) {
+        qUpperRooted = (RootedInfil - SoilEvap) / fracRooted - RootedPerc;
+    } else {
+        qUpperRooted = 0.0;
+    }
+    if (fracRooted < 1.0) {
+        qUpperUnrooted = SurfaceInfil / ( 1 - fracRooted ) - SoilPerc;
+    } else {
+        qUpperUnrooted = 0.0;
+    }
+
+//    if (isnan(RootedInfil)){
+//        printf("InfilR: %.5f, SoilEvap: %.5f, RootedPerc: %.5f\n", RootedInfil, SoilEvap, RootedPerc);
+//    }
+    qLower = fracRooted * RootedPerc + (1 - fracRooted) * SoilPerc - StorageExfil - StorageDrain;
 
     dxdt[DISTPIPE] = ( SurfaceInflow - PipeExfil ) * theLidUnit->area;
-    dxdt[PAVE] = (PipeExfil - SurfaceInfil) / theLidProc->pavement.voidFrac;
+    dxdt[PAVE] = (PipeExfil - SurfaceInfil - RootedInfil) / theLidProc->pavement.voidFrac;
 
     // --- d(upper zone moisture)/dt = (net upper zone flow) /
     //                                 (upper zone depth)
     denom = theLidProc->soil.thickness - x[STOR];
-    if (denom > 0.0)
-        dxdt[SOIL] = qUpper / denom;
-    else
+    if (denom > 0.0) {
+        dxdt[SOIL] = qUpperUnrooted / denom;
+        dxdt[ROOT] = qUpperRooted / denom;
+    }
+    else {
         dxdt[SOIL] = 0.0;
+        dxdt[ROOT] = 0.0;
+    }
     // --- d(lower zone depth)/dt = (net lower zone flow) /
     //                              (upper zone moisture deficit)
-    denom = theLidProc->soil.porosity - x[SOIL];
+    denom = theLidProc->soil.porosity - (fracRooted*x[ROOT] + (1-fracRooted)*x[SOIL]);
     if (denom > 0.0)
         dxdt[STOR] = qLower / denom;
     else
@@ -1479,8 +1532,26 @@ void treepitFluxRates(double x[], double f[])
     // --- set limit on DistPipe exfiltration based on volume in DistPipe
     MaxPipeExfil = distpipeVol / Tstep;
 
+    RootedInfil = 0.0;
+//    printf("ThetaUR: %.2f, ThetaR: %.2f, InfilPot: %.3f", soilTheta, rootedTheta, SurfaceInfil);
     // --- set limit on SoilInfiltration based on available volume in unsaturated Layer
-    MaxInfil = (soilPorosity - soilTheta) * soilThickness / Tstep;
+    MaxInfil = (1 - fracRooted) * (soilPorosity - soilTheta) * (soilThickness - storageDepth) / Tstep;
+//    printf(", MaxInfilUR: %.3f", MaxInfil);
+    MaxInfilRooted = fracRooted * (soilPorosity - rootedTheta) * (soilThickness - storageDepth) / Tstep;
+//    printf(", MaxInfilR: %.3f", MaxInfilRooted);
+    // --- split potential Infiltration into infiltration for rooted and unrooted zone
+    if (SurfaceInfil >= ( MaxInfil + MaxInfilRooted ))
+    {
+//        printf("Available porous volume limiting: %.5f >= %.5f", SurfaceInfil, (MaxInfil+MaxInfilRooted));
+        RootedInfil = MaxInfilRooted;
+        SurfaceInfil = MaxInfil;
+    } else
+    {
+//        printf("Available infil volume limiting: %.5f < %.5f", SurfaceInfil, (MaxInfil+MaxInfilRooted));
+        RootedInfil = SurfaceInfil * MaxInfilRooted / ( MaxInfilRooted + MaxInfil );
+        SurfaceInfil = SurfaceInfil - RootedInfil;
+    }
+//    printf(", InfilUR: %.5f, InfilR: %.5f", SurfaceInfil, RootedInfil);
 
     // --- calculate potential maximum transpiration
     // --- apply user-supplied LAI pattern
@@ -1489,17 +1560,23 @@ void treepitFluxRates(double x[], double f[])
         month = datetime_monthOfYear(currentDate) - 1;
         lai *= table_lookup(&Curve[curve], month);
     }
-//    printf("crownArea: %.1f, fracRooted %.1f ", crownArea, fracRooted);
+    // --- transpiration rate from rooted fraction but calculted for entire LID area
     transpRate = EvapRate * lai * crownArea / theLidUnit->area;
-    transpRate = transpRate * getWaterStressResponse(soilTheta);
-    // --- set limit on transpiration rate from upper GW zone
-    vUnsat = (soilTheta - soilWiltPoint) * fracRooted * (soilThickness - storageDepth);
+    transpRate = transpRate * getWaterStressResponse(rootedTheta);
+    // --- set limit on transpiration rate from rooted fraction of upper GW zone
+    vUnsat = fracRooted * (rootedTheta - soilWiltPoint) * (soilThickness - storageDepth);
     vUnsat = MAX(0.0, vUnsat);
     SoilEvap = MIN(vUnsat / Tstep, transpRate);
+//    printf(", SoilEvap: %.3f", SoilEvap);
 
-    // --- set limit on percolation rate from upper to lower GW zone
-    vUnsat = (soilThickness - storageDepth) * (soilTheta - soilFieldCap);
-    MaxSoilPerc = vUnsat / Tstep - SoilEvap;
+    // --- set limit on percolation rate from upper to lower rooted GW zone
+    vUnsat = fracRooted * (soilThickness - storageDepth) * (rootedTheta - soilFieldCap);
+    MaxSoilPercRooted = vUnsat / Tstep - SoilEvap;
+    MaxSoilPercRooted = MAX(0.0, MaxSoilPercRooted);
+//    printf(", MaxPercR: %.3f\n", MaxSoilPercRooted);
+    // --- set limit on percolation rate from upper to lower unrooted GW zone
+    vUnsat = (1.0 - fracRooted) * (soilThickness - storageDepth) * (soilTheta - soilFieldCap);
+    MaxSoilPerc = vUnsat / Tstep;
     MaxSoilPerc = MAX(0.0, MaxSoilPerc);
 
     // --- set limit on GW flow out of aquifer based on volume of lower zone
@@ -1510,34 +1587,49 @@ void treepitFluxRates(double x[], double f[])
     //     NOTE: ODE solver must have been initialized previously
     odesolve_integrate(x, 6, 0, Tstep, TREEPITTOL, Tstep, getTreepitDxDt);
 
+//    printf(", ThetaUR: %.2f, ThetaR: %.2f\n", x[SOIL], x[ROOT]);
+    if (isnan(x[ROOT]))exit(EXIT_FAILURE);
+
     // --- keep state variables within allowable bounds
     x[DISTPIPE] = MAX(x[DISTPIPE], 0.0);
-    if ( x[DISTPIPE] >= distpipeVol )
+    if ( x[DISTPIPE] >= theLidProc->distPipe.vFull )
     {
-        x[PAVE] = distpipeVol;
+        x[DISTPIPE] = theLidProc->distPipe.vFull;
     }
     x[PAVE] = MAX(x[PAVE], 0.0);
-    if ( x[PAVE] >= pavementDepth )
+    if ( x[PAVE] >= theLidProc->pavement.thickness )
     {
-        x[PAVE] = pavementDepth;
+        x[PAVE] = theLidProc->pavement.thickness;
     }
     x[SOIL] = MAX(x[SOIL], soilWiltPoint);
     if ( x[SOIL] >= soilPorosity )
     {
+        printf("Unrooted SMC MAX SOLL: %.2f, IST: %.2f, Depth und ThetaUR werden zurueckgesetzt\n", soilPorosity, x[SOIL]);
         x[SOIL] = soilPorosity - XTOL;
+        x[STOR] = soilThickness - XTOL;
+    }
+    x[ROOT] = MAX(x[ROOT], soilWiltPoint);
+    if ( x[ROOT] >= soilPorosity )
+    {
+        printf("Rooted SMC MAX SOLL: %.2f, IST: %.2f, Depth und ThetaRt werden zurueckgesetzt\n", soilPorosity, x[ROOT]);
+        x[ROOT] = soilPorosity - XTOL;
         x[STOR] = soilThickness - XTOL;
     }
     x[STOR] = MAX(x[STOR],  0.0);
     if ( x[STOR] >= soilThickness )
     {
         x[STOR] = soilThickness - XTOL;
+        printf("Depth wird zurückgesetzt\n");
     }
+//    printf("DistpipeVol: %.4f, PipeExfil: %.6f, PaveDepth: %.2f, SurfaceInfil: %.6f, RootedInfil: %.6f\n",
+//           x[DISTPIPE], PipeExfil, x[PAVE], SurfaceInfil, RootedInfil);
 
     //... assign values to layer flux rates
     f[DISTPIPE] = SurfaceInflow - PipeExfil;
-    f[PAVE]     = PipeExfil - SurfaceInfil;
-    f[SOIL]     = SurfaceInfil - SoilPerc - SoilEvap;
-    f[STOR]     = SoilPerc - StorageDrain - StorageExfil;
+    f[PAVE]     = PipeExfil - ( 1 - fracRooted ) * SurfaceInfil - fracRooted * RootedInfil;
+    f[SOIL]     = SurfaceInfil - (1 - fracRooted) * SoilPerc;
+    f[ROOT]     = RootedInfil - fracRooted * RootedPerc - SoilEvap;
+    f[STOR]     = (1 - fracRooted) * SoilPerc + fracRooted * RootedPerc - StorageDrain - StorageExfil;
 }
 
 //=============================================================================
