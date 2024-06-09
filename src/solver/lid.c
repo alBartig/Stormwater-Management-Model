@@ -2153,25 +2153,25 @@ void initLidRptFile(char* title, char* lidID, char* subcatchID, TLidUnit* lidUni
 //  Output:  none
 //
 {
-    static int colCount = 17;
+    static int colCount = 18;
     static char* head1[] = {
         "\n                    \t", "  Elapsed\t",
-        "    Total\t", "    Total\t", "  Surface\t", " Pavement\t", "     Soil\t",
+        "    Total\t", "    Total\t", "  Surface\t", " Pavement\t", "     Soil\t", "     Root\t",
         "  Storage\t", "  Surface\t", "    Drain\t", "  Surface\t", " Pavement\t",
         "     Soil\t", " Storage\t", " DistPipe\t", "   Rooted\t", " DistPipe"};
     static char* head2[] = {
         "\n                    \t", "     Time\t",
-        "   Inflow\t", "     Evap\t", "    Infil\t", "     Perc\t", "     Perc\t",
+        "   Inflow\t", "     Evap\t", "    Infil\t", "     Perc\t", "     Perc\t", "     Perc\t",
         "    Exfil\t", "   Runoff\t", "  OutFlow\t", "    Level\t", "    Level\t",
         " Moisture\t", "   Level\t", "   Volume\t", " Moisture\t", "   Exfil."};
     static char* units1[] = {
         "\nDate        Time    \t", "    Hours\t",
-        "    in/hr\t", "    in/hr\t", "    in/hr\t", "    in/hr\t", "    in/hr\t",
+        "    in/hr\t", "    in/hr\t", "    in/hr\t", "    in/hr\t", "    in/hr\t", "    in/hr\t",
         "    in/hr\t", "    in/hr\t", "    in/hr\t", "   inches\t", "   inches\t",
         "  Content\t", "  inches\t", "      cft\t", "  Content\t", "    in/hr"};
     static char* units2[] = {
         "\nDate        Time    \t", "    Hours\t",
-        "    mm/hr\t", "    mm/hr\t", "    mm/hr\t", "    mm/hr\t", "    mm/hr\t",
+        "    mm/hr\t", "    mm/hr\t", "    mm/hr\t", "    mm/hr\t", "    mm/hr\t","    mm/hr\t",
         "    mm/hr\t", "    mm/hr\t", "    mm/hr\t", "       mm\t", "       mm\t",
         "  Content\t", "      mm\t", "       m3\t", "  Content\t", "    mm/hr"};
     static char line9[] = " ---------";
