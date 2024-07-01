@@ -2158,22 +2158,22 @@ void initLidRptFile(char* title, char* lidID, char* subcatchID, TLidUnit* lidUni
         "\n                    \t", "  Elapsed\t",
         "    Total\t", "    Total\t", "  Surface\t", " Pavement\t", "     Soil\t", "     Root\t",
         "  Storage\t", "  Surface\t", "    Drain\t", "  Surface\t", " Pavement\t",
-        "     Soil\t", " Storage\t", " DistPipe\t", "   Rooted\t", " DistPipe"};
+        "     Soil\t", " Storage\t", "  Transp.\t", "   Rooted\t", "  Storage"};
     static char* head2[] = {
         "\n                    \t", "     Time\t",
         "   Inflow\t", "     Evap\t", "    Infil\t", "     Perc\t", "     Perc\t", "     Perc\t",
         "    Exfil\t", "   Runoff\t", "  OutFlow\t", "    Level\t", "    Level\t",
-        " Moisture\t", "   Level\t", "   Volume\t", " Moisture\t", "   Exfil."};
+        " Moisture\t", "   Level\t", "    Rate.\t", " Moisture\t", "   Infil."};
     static char* units1[] = {
         "\nDate        Time    \t", "    Hours\t",
         "    in/hr\t", "    in/hr\t", "    in/hr\t", "    in/hr\t", "    in/hr\t", "    in/hr\t",
         "    in/hr\t", "    in/hr\t", "    in/hr\t", "   inches\t", "   inches\t",
-        "  Content\t", "  inches\t", "      cft\t", "  Content\t", "    in/hr"};
+        "  Content\t", "  inches\t", "    in/hr\t", "  Content\t", "    in/hr"};
     static char* units2[] = {
         "\nDate        Time    \t", "    Hours\t",
         "    mm/hr\t", "    mm/hr\t", "    mm/hr\t", "    mm/hr\t", "    mm/hr\t","    mm/hr\t",
         "    mm/hr\t", "    mm/hr\t", "    mm/hr\t", "       mm\t", "       mm\t",
-        "  Content\t", "      mm\t", "       m3\t", "  Content\t", "    mm/hr"};
+        "  Content\t", "      mm\t", "    mm/hr\t", "  Content\t", "    mm/hr"};
     static char line9[] = " ---------";
     int   i;
     FILE* f = lidUnit->rptFile->file;
