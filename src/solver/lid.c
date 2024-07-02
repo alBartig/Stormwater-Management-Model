@@ -1103,7 +1103,6 @@ void validateLidProc(int j)
         break;
     case TREEPIT:
         if ( LidProcs[j].tree.h2 <= 0.0 ) layerMissing = TRUE;
-        if ( LidProcs[j].distPipe.diameter <= 0.0 ) layerMissing = TRUE;
         break;
     }
     if ( layerMissing )
@@ -1138,11 +1137,11 @@ void validateLidProc(int j)
         || LidProcs[j].tree.fracRooted      >  1.0
         || LidProcs[j].tree.LAI             <= 0.0
         || LidProcs[j].tree.crownArea       <= 0.0
-        || LidProcs[j].distPipe.diameter    <= 0.0
-        || LidProcs[j].distPipe.length      <= 0.0
-        || LidProcs[j].distPipe.coeff       <= 0.0
-        || LidProcs[j].distPipe.offset      <  0.0
-        || LidProcs[j].distPipe.offset      >  LidProcs[j].pavement.thickness
+//        || LidProcs[j].distPipe.diameter    <= 0.0
+//        || LidProcs[j].distPipe.length      <= 0.0
+//        || LidProcs[j].distPipe.coeff       <= 0.0
+//        || LidProcs[j].distPipe.offset      <  0.0
+//        || LidProcs[j].distPipe.offset      >  LidProcs[j].pavement.thickness
         )
         {
             sstrncpy(Msg, LidProcs[j].ID, MAXMSG);
