@@ -683,21 +683,15 @@ int readTreeLayerData(int j, char* toks[], int ntoks)
 {
     int    i;
     double x[5];
-    printf("reading Treepit Data\n");
-
-    printf("iterating toks\n");
 
     if ( ntoks < 7 ) return error_setInpError(ERR_ITEMS, "");
-    printf("ntoks >= 7 check passed\n");
+
     for (i = 0; i < 5; i++) x[i] = 0.0;
     for (i = 2; i < 7; i++)
     {
-        printf("tok: %d\n", i);
         if ( ! getDouble(toks[i], &x[i-2]) || x[i-2] < 0.0 )
             return error_setInpError(ERR_NUMBER, toks[i]);
     }
-
-    printf("checking for curve toks\n");
 
     i = -1;
     if ( ntoks >= 8 )
@@ -705,7 +699,6 @@ int readTreeLayerData(int j, char* toks[], int ntoks)
         i = project_findObject(CURVE, toks[7]);
         if (i < 0) return error_setInpError(ERR_NAME, toks[7]);
     }
-    printf("Treepit:\n");
 
     LidProcs[j].tree.h2            = x[0];
     LidProcs[j].tree.h3            = x[1];
@@ -713,9 +706,7 @@ int readTreeLayerData(int j, char* toks[], int ntoks)
     LidProcs[j].tree.crownArea     = x[3] / UCF(SURFACEAREA);
     LidProcs[j].tree.fracRooted    = x[4];
     LidProcs[j].tree.LAICurve      = i;
-    printf("read done\n");
     i=0;
-    for (i = 0; i < 5; i++) printf("%.d: %.5f\n", i, x[i]);
 
     return 0;
 }
@@ -880,6 +871,7 @@ int readStorageData(int j, char* toks[], int ntoks)
     }
     // ####################################################################################
     LidProcs[j].storage.covered     = covered;
+    printf("StorageThickness: %.2f\n", LidProcs[j].storage.thickness);
     return 0;
 }
  
@@ -1177,11 +1169,11 @@ void validateLidProc(int j)
         }
     }
 
-    //... if no storage layer adjust void fraction and drain offset 
+    //... if no storage layer adjust void fraction and drain offset ( if LID-type is not Treepit)
     else
     {    
         LidProcs[j].storage.voidFrac = 1.0;
-        LidProcs[j].drain.offset = 0.0;
+        if ( LidProcs[j].lidType != TREEPIT ) LidProcs[j].drain.offset = 0.0;
     }
 
     //... check for invalid drain open/closed heads
@@ -2157,12 +2149,12 @@ void initLidRptFile(char* title, char* lidID, char* subcatchID, TLidUnit* lidUni
         "\n                    \t", "  Elapsed\t",
         "    Total\t", "    Total\t", "  Surface\t", " Pavement\t", "     Soil\t", "     Root\t",
         "  Storage\t", "  Surface\t", "    Drain\t", "  Surface\t", " Pavement\t",
-        "     Soil\t", " Storage\t", "  Transp.\t", "   Rooted\t", "  Storage"};
+        "     Soil\t", " Storage\t", "   Transp\t", "   Rooted\t", "   Unroot"};
     static char* head2[] = {
         "\n                    \t", "     Time\t",
         "   Inflow\t", "     Evap\t", "    Infil\t", "     Perc\t", "     Perc\t", "     Perc\t",
         "    Exfil\t", "   Runoff\t", "  OutFlow\t", "    Level\t", "    Level\t",
-        " Moisture\t", "   Level\t", "    Rate.\t", " Moisture\t", "   Infil."};
+        " Moisture\t", "   Level\t", "     Rate\t", " Moisture\t", "     Perc"};
     static char* units1[] = {
         "\nDate        Time    \t", "    Hours\t",
         "    in/hr\t", "    in/hr\t", "    in/hr\t", "    in/hr\t", "    in/hr\t", "    in/hr\t",
