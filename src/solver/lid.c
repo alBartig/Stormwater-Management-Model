@@ -1127,8 +1127,8 @@ void validateLidProc(int j)
         || LidProcs[j].soil.wiltPoint       >= LidProcs[j].tree.h3
         || LidProcs[j].tree.fracRooted      <  0.0
         || LidProcs[j].tree.fracRooted      >  1.0
-        || LidProcs[j].tree.LAI             <= 0.0
-        || LidProcs[j].tree.crownArea       <= 0.0
+        || LidProcs[j].tree.LAI             <  0.0
+        || LidProcs[j].tree.crownArea       <  0.0
 //        || LidProcs[j].distPipe.diameter    <= 0.0
 //        || LidProcs[j].distPipe.length      <= 0.0
 //        || LidProcs[j].distPipe.coeff       <= 0.0
