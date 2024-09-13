@@ -48,6 +48,7 @@ else()
     add_library(swmm5
             ${SWMM_SOURCES}
             $<TARGET_OBJECTS:shared_objs>
+            rosenbrock.c
     )
 
 endif()

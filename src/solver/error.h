@@ -22,6 +22,7 @@ enum  ErrorType {
       ERR_MEMORY               = 101,
       ERR_KINWAVE              = 103,
       ERR_ODE_SOLVER           = 105,
+      ERR_BDF_SOLVER           = 105,
       ERR_TIMESTEP             = 107,
 
 // ... Subcatchment/Aquifer Errors

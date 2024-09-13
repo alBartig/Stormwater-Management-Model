@@ -67,6 +67,7 @@
 #include "lid.h"
 #include "headers.h"
 #include "odesolve.h"
+#include "rosenbrock.h"
 #include "funcs.h"
 
 //-----------------------------------------------------------------------------
@@ -132,6 +133,7 @@ static double     SurfaceOutflow; // outflow from surface layer (ft/s)
 static double     SurfaceVolume;  // volume in surface storage (ft)
 static double     MaxInfil;       // maximum infiltration rate (ft/s)
 static double     MaxInfilRooted; // maximum rooted infiltration rate (ft/s)
+static double     MaxSurfaceExfil;// maximum infiltratin rate from available surface water (ft/s)
 static double     MaxInfilUnrooted; // maximum unrooted infiltration rate (ft/s)
 
 static double     PaveEvap;       // evap. from pavement layer (ft/s)
@@ -376,7 +378,7 @@ double lidproc_getOutflow(TLidUnit* lidUnit, TLidProc* lidProc, double inflow,
     }
     if ( theLidProc->storage.thickness > 0.0 )
     {
-        printf("storage > 0.0: %.2f", theLidProc->storage.thickness);
+//        printf("storage > 0.0: %.2f", theLidProc->storage.thickness);
         xMax[STOR] = theLidProc->storage.thickness;
     }
     if ( theLidProc->lidType == GREEN_ROOF )
@@ -1420,17 +1422,19 @@ void getTreepitFluxes(double surfaceDepth, double soilTheta, double rootedTheta,
     else
     {
         //... limit storage exfiltration by available storage volume
-        maxRate = MaxStorageExfil;
+        maxRate = MaxStorageExfil + PavePerc;
         StorageExfil = MIN(StorageExfil, maxRate);
         StorageExfil = MAX(StorageExfil, 0.0);
 
         //... limit storage-underdrain flow by volume above drain offset
-        maxRate = MaxStorageDrain;
+        maxRate = MaxStorageDrain + PavePerc;
         maxRate = MAX(maxRate, 0.0);
         StorageDrain = MIN(StorageDrain, maxRate);
 
         //... limit store infil by unused storage volume
-        PavePerc = MIN(PavePerc, MaxPavePerc);
+        maxRate = MaxPavePerc + StorageDrain + StorageExfil + StorageEvap;
+        maxRate = MIN(maxRate, MaxSatExfil);
+        PavePerc = MIN(PavePerc, maxRate);
         PavePerc = MAX(PavePerc, 0.0);
 
         //... limit soil-underdrain flow by volume above drain offset
@@ -1514,7 +1518,7 @@ void  getTreepitDxDt(double t, double* x, double* dxdt)
         dxdt[PAVE] = 0.0;
 
     if ( theLidProc->storage.thickness == 0.0) dxdt[STOR] = 0.0;
-    else dxdt[STOR] = (PavePerc - StorageExfil - StorageDrain - StorageEvap) / theLidProc->storage.voidFrac;
+    else dxdt[STOR] = fStorage / theLidProc->storage.voidFrac;
 }
 
 //=============================================================================
@@ -1598,6 +1602,8 @@ void treepitFluxRates(double x[], double f[])
     tempRate = MAX(0.0, tempRate);
     SoilTransp = MIN(SoilTransp, tempRate);
 
+    // --- set limit on SurfaceInfiltration based on available volume on surface
+    MaxSurfaceExfil = distzoneDepth / Tstep;
     // --- set limit on SurfaceInfiltration based on available volume in unsaturated Layer
     vUnsat = fracRooted * (soilPorosity - rootedTheta) * unsatDepth;
     MaxInfilRooted = vUnsat / Tstep;
@@ -1642,22 +1648,27 @@ void treepitFluxRates(double x[], double f[])
     }
 
     // --- integrate eqns. for d(Theta)/dt and d(LowerDepth)/dt
-    odesolve_integrate(x, 6, 0, Tstep, TREEPITTOL, Tstep, getTreepitDxDt);
-
+//    odesolve_integrate(x, 5, 0, Tstep, TREEPITTOL, Tstep, getTreepitDxDt);
+    int status = rosenbrock_integrate(x, 5, 0, Tstep, TREEPITTOL, Tstep, getTreepitDxDt);
+    if (status != 0) {
+        printf("Integration failed.\n");
+        // Handle the error or exit
+    }
     // --- keep state variables within allowable bounds
+    x[SURF] = MAX(x[SURF], 0.0);
     x[SOIL] = MAX(x[SOIL], soilWiltPoint);
     if ( x[SOIL] >= soilPorosity )
     {
         printf("Unrooted SMC MAX SOLL: %.2f, IST: %.2f, Depth und ThetaUR werden zurueckgesetzt\n", soilPorosity, x[SOIL]);
         x[SOIL] = soilPorosity - XTOL;
-        x[STOR] = soilThickness - XTOL;
+        x[PAVE] = soilThickness - XTOL;
     }
     x[ROOT] = MAX(x[ROOT], soilWiltPoint);
     if ( x[ROOT] >= soilPorosity )
     {
         printf("Rooted SMC MAX SOLL: %.2f, IST: %.2f, Depth und ThetaRt werden zurueckgesetzt\n", soilPorosity, x[ROOT]);
         x[ROOT] = soilPorosity - XTOL;
-        x[STOR] = soilThickness - XTOL;
+        x[PAVE] = soilThickness - XTOL;
     }
     x[PAVE] = MAX(x[PAVE],  0.0);
     if ( x[PAVE] >= soilThickness )

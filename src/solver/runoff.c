@@ -38,6 +38,7 @@
 #include <stdlib.h>
 #include "headers.h"
 #include "odesolve.h"
+#include "rosenbrock.h"
 
 //-----------------------------------------------------------------------------
 // Shared variables
@@ -93,6 +94,10 @@ int runoff_open()
 
     // --- open the Ordinary Differential Equation solver
     if ( !odesolve_open(MAXODES) ) report_writeErrorMsg(ERR_ODE_SOLVER, "");
+    if (!rosenbrock_open(MAXODES)) {
+        printf("Failed to initialize Rosenbrock solver.\n");
+        report_writeErrorMsg(ERR_BDF_SOLVER, "");
+    }
 
     // --- allocate memory for pollutant runoff loads
     OutflowLoad = NULL;
@@ -130,6 +135,7 @@ void runoff_close()
 {
     // --- close the ODE solver
     odesolve_close();
+    rosenbrock_close();
 
     // --- free memory for pollutant runoff loads
     FREE(OutflowLoad);
