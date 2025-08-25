@@ -670,7 +670,7 @@ int readDistPipeData(int j, char* toks[], int ntoks)
 
 int readTreeLayerData(int j, char* toks[], int ntoks)
 //
-//  Purpose: reads distribution pipe layer data for a LID process from line of input
+//  Purpose: reads tree layer data for a LID process from line of input
 //           data file
 //  Input:   j = LID process index
 //           toks = array of string tokens
@@ -678,7 +678,7 @@ int readTreeLayerData(int j, char* toks[], int ntoks)
 //  Output:  returns error code
 //
 //  Format of data is:
-//  LID_ID  SURFACE  PipeDiameter  PipeLength  coeff  expon  offset  qCurve
+//  LID_ID  h2  h3  LAI  crownArea  fracRooted  laiCurve
 //
 {
     int    i;
@@ -694,9 +694,9 @@ int readTreeLayerData(int j, char* toks[], int ntoks)
     }
 
     i = -1;
-    if ( ntoks >= 8 )
+    if ( ntoks > 7 )
     {
-        i = project_findObject(CURVE, toks[7]);
+        i = project_findObject(TIMEPATTERN, toks[7]);
         if (i < 0) return error_setInpError(ERR_NAME, toks[7]);
     }
 
@@ -830,7 +830,7 @@ int readStorageData(int j, char* toks[], int ntoks)
 {
     int    i;
     int    covered = FALSE;
-    double x[6];
+    double x[7];
 
     //... read numerical parameters
     if ( ntoks < 6 ) return error_setInpError(ERR_ITEMS, "");
@@ -846,6 +846,16 @@ int readStorageData(int j, char* toks[], int ntoks)
         if (match(toks[6], w_YES))
             covered = TRUE;
     }
+    //... check if exponent for seepage is passed, else exponent = 0
+    if (ntoks > 7)
+    {
+        if ( ! getDouble(toks[7], &x[6]))
+            return error_setInpError(ERR_NUMBER, toks[i]);
+    }
+    else
+    {
+        x[6] = 0.0;
+    }
 
     //... convert void ratio to void fraction
     x[1] = x[1]/(x[1] + 1.0);
@@ -854,6 +864,7 @@ int readStorageData(int j, char* toks[], int ntoks)
     LidProcs[j].storage.thickness   = x[0] / UCF(RAINDEPTH);
     LidProcs[j].storage.voidFrac    = x[1];
     LidProcs[j].storage.kSat        = x[2] / UCF(RAINFALL);
+    LidProcs[j].storage.expon       = x[6];
 
     // OWA EDIT ############################################################################
     // moved from validateLidProcs in 14d2e62e9a6baad89f6cd2dc0c55907e1d2289b2
@@ -871,7 +882,6 @@ int readStorageData(int j, char* toks[], int ntoks)
     }
     // ####################################################################################
     LidProcs[j].storage.covered     = covered;
-    printf("StorageThickness: %.2f\n", LidProcs[j].storage.thickness);
     return 0;
 }
  
@@ -1095,6 +1105,8 @@ void validateLidProc(int j)
         break;
     case TREEPIT:
         if ( LidProcs[j].tree.h2 <= 0.0 ) layerMissing = TRUE;
+//        printf("Seepage Exponent: %f\n", LidProcs[j].storage.expon);
+//        printf("Seepage Constant: %f\n", LidProcs[j].storage.kSat);
         break;
     }
     if ( layerMissing )

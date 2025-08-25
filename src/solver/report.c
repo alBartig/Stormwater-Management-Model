@@ -229,14 +229,14 @@ void report_writeLogo()
 {
     fprintf(Frpt.file, FMT08);
 	sprintf(Msg, \
-		"\n  PYSWMM TOOLKIT API - VERSION v%s (%.10s)", 
+		"\n  PYSWMM TOOLKIT API - VERSION v%s (%.10s)",
         TOOLKIT_VERSION, BUILD_ID);
     fprintf(Frpt.file, "%s", Msg);
 
-    sprintf(Msg, \
-		"\n  TREEPIT LID - VERSION v%s (%.10s)",
-            TP_VERSION, TP_BUILD_ID);
-    fprintf(Frpt.file, "%s", Msg);
+//    sprintf(Msg, \
+//		"\n  TREEPIT LID - VERSION v%s (%.10s)",
+//            TP_VERSION, TP_BUILD_ID);
+//    fprintf(Frpt.file, "%s", Msg);
 
     fprintf(Frpt.file, FMT09);
     fprintf(Frpt.file, FMT10);
